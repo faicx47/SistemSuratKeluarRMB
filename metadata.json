@@ -1,0 +1,7 @@
+{
+  "name": "Sistem Surat Keluar Remasbara Baiturrahman",
+  "description": "Aplikasi administrasi dan manajemen arsip surat keluar Remasbara (Remaja Masjid Baiturrahman) Mekarjaya Sukmajaya Depok dengan penomoran otomatis dan tanda tangan digital.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
