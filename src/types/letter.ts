@@ -7,6 +7,7 @@ export type LetterCategoryCode =
   | 'ED'
   | 'PBM'
   | 'SK'
+  | 'IM'
   | 'KST';
 
 export interface LetterCategory {
@@ -24,6 +25,7 @@ export const LETTER_CATEGORIES: LetterCategory[] = [
   { code: 'ED', label: 'Surat Edaran', description: 'Pemberitahuan kepada seluruh anggota atau jamaah pemuda' },
   { code: 'PBM', label: 'Pemberitahuan Kegiatan', description: 'Pemberitahuan kegiatan ke Pengurus Yayasan, RT/RW Mekarjaya' },
   { code: 'SK', label: 'Surat Keputusan', description: 'Pengesahan struktur panitia, pelantikan divisi' },
+  { code: 'IM', label: 'Internal Memo', description: 'Nota dinas, instruksi internal, koordinasi pengurus & divisi REMASBARA' },
   { code: 'KST', label: 'Kustom / Umum', description: 'Klasifikasi surat keluar khusus lainnya' },
 ];
 

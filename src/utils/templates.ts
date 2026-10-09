@@ -180,5 +180,35 @@ export const LETTER_TEMPLATES: LetterTemplate[] = [
       'Babinsa Kelurahan Mekarjaya',
       'Arsip Remasbara'
     ]
+  },
+  {
+    id: 'internal-memo',
+    name: 'Internal Memo (IM) / Nota Dinas',
+    description: 'Instruksi, arahan, atau koordinasi dinas internal antar bidang & divisi Remasbara',
+    categoryCode: 'IM',
+    subject: 'Internal Memo: Arahan Koordinasi Program Kerja & Ketertiban Inventaris',
+    attachment: '-',
+    recipientName: 'Seluruh Ketua Bidang & Anggota Divisi',
+    recipientInstitution: 'REMASBARA Baiturrahman Depok',
+    openingGreeting: 'Assalamu\'alaikum Warahmatullahi Wabarakatuh',
+    openingParagraph: 'Disampaikan kepada seluruh jajaran pengurus harian, ketua bidang, dan anggota divisi REMASBARA, dalam rangka meningkatkan kedisiplinan administrasi dan efektivitas koordinasi internal organisasi.',
+    eventDetails: {
+      enabled: false,
+      dayDate: '',
+      time: '',
+      location: '',
+      agenda: '',
+    },
+    contentParagraphs: [
+      '1. Setiap divisi diwajibkan untuk menyampaikan laporan progres berkala program kerja bulanan kepada Sekretaris Umum selambat-lambatnya akhir pekan ini.',
+      '2. Penggunaan inventaris dan sarana sekretariat masjid wajib dicatat dalam buku peminjaman logistik demi menjaga ketertiban bersama.',
+      '3. Seluruh pengurus diharapkan menjaga kebersihan, kerapian, serta adab Islami di lingkungan Masjid Baiturrahman Mekarjaya.'
+    ],
+    closingParagraph: 'Demikian memo internal ini diterbitkan untuk diperhatikan dan dilaksanakan dengan penuh rasa tanggung jawab.',
+    closingGreeting: 'Wassalamu\'alaikum Warahmatullahi Wabarakatuh',
+    copies: [
+      'Ketua Yayasan Masjid Baiturrahman (sebagai laporan)',
+      'Arsip Internal Remasbara'
+    ]
   }
 ];
