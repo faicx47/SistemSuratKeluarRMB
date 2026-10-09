@@ -266,6 +266,28 @@ export const SignatureCanvasModal: React.FC<SignatureCanvasModalProps> = ({
         cropHeight
       );
 
+      // Konversi pixel putih/hampir putih menjadi transparan agar hasil presisi seperti PNG transparan
+      try {
+        const croppedImgData = croppedCtx.getImageData(0, 0, cropWidth, cropHeight);
+        const cData = croppedImgData.data;
+        let modified = false;
+        for (let i = 0; i < cData.length; i += 4) {
+          const r = cData[i];
+          const g = cData[i + 1];
+          const b = cData[i + 2];
+          const a = cData[i + 3];
+          if (a > 0 && r > 235 && g > 235 && b > 235) {
+            cData[i + 3] = 0;
+            modified = true;
+          }
+        }
+        if (modified) {
+          croppedCtx.putImageData(croppedImgData, 0, 0);
+        }
+      } catch (err) {
+        // Fallback jika getImageData dibatasi cross-origin
+      }
+
       return croppedCanvas.toDataURL('image/png');
     } catch (e) {
       console.warn('Trim canvas error, fallback to full canvas:', e);

@@ -185,11 +185,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
           <div className="relative grid grid-cols-2 gap-8 text-center pt-2">
             {/* PENANDATANGAN 1 (KETUA UMUM) DENGAN STEMPEL DI SEBELAH KIRI */}
             <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-              {/* STEMPEL RESMI REMASBARA TEPAT DI SEBELAH KIRI KETUA UMUM (DENGAN GESERAN 1CM KE KANAN MENDEKATI TENGAH) */}
+              {/* STEMPEL RESMI REMASBARA TEPAT DI SEBELAH KIRI KETUA UMUM (DENGAN GESERAN TAMBAHAN 1CM KE KANAN MENDEKATI TENGAH) */}
               {letter.stamp?.enabled && (
                 <div
                   className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
-                  style={{ transform: 'translateX(1cm)' }}
+                  style={{ transform: 'translateX(2cm)' }}
                 >
                   {letter.stamp.customStampUrl ? (
                     <img
@@ -284,11 +284,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                 <div className="grid grid-cols-2 gap-8 text-center pt-1">
                   {/* 1. KETUA BIDANG KEMASJIDAN DENGAN STEMPEL DI SEBELAH KIRI */}
                   <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-                    {/* STEMPEL RESMI BIDANG KEMASJIDAN TEPAT DI SEBELAH KIRI (GESER 1CM KE KANAN) */}
+                    {/* STEMPEL RESMI BIDANG KEMASJIDAN TEPAT DI SEBELAH KIRI (GESER KE KANAN MENDEKATI TENGAH) */}
                     {(letter.kemasjidanStamp?.enabled ?? true) && (
                       <div
                         className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
-                        style={{ transform: 'translateX(1cm)' }}
+                        style={{ transform: 'translateX(2cm)' }}
                       >
                         {letter.kemasjidanStamp?.customStampUrl ? (
                           <img
@@ -338,11 +338,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
 
                   {/* 2. KETUA YAYASAN DENGAN STEMPEL DI SEBELAH KIRI */}
                   <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-                    {/* STEMPEL RESMI YAYASAN TEPAT DI SEBELAH KIRI (GESER 1CM KE KANAN) */}
+                    {/* STEMPEL RESMI YAYASAN TEPAT DI SEBELAH KIRI (GESER KE KANAN MENDEKATI TENGAH) */}
                     {(letter.yayasanStamp?.enabled ?? true) && (
                       <div
                         className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
-                        style={{ transform: 'translateX(1cm)' }}
+                        style={{ transform: 'translateX(2cm)' }}
                       >
                         {letter.yayasanStamp?.customStampUrl ? (
                           <img
@@ -406,11 +406,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
 
                     return (
                       <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-                        {/* Stempel di sebelah kiri untuk single advisor (geser 1cm ke kanan) */}
+                        {/* Stempel di sebelah kiri untuk single advisor (geser ke kanan mendekati tengah) */}
                         {isKemasjidan && (letter.kemasjidanStamp?.enabled ?? true) && (
                           <div
                             className="absolute -left-12 sm:-left-16 top-1 z-10 pointer-events-none"
-                            style={{ transform: 'translateX(1cm)' }}
+                            style={{ transform: 'translateX(2cm)' }}
                           >
                             {letter.kemasjidanStamp?.customStampUrl ? (
                               <img
@@ -431,7 +431,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                         {(isYayasan || (!isKemasjidan && !isYayasan)) && (letter.yayasanStamp?.enabled ?? true) && (
                           <div
                             className="absolute -left-12 sm:-left-16 top-1 z-10 pointer-events-none"
-                            style={{ transform: 'translateX(1cm)' }}
+                            style={{ transform: 'translateX(2cm)' }}
                           >
                             {letter.yayasanStamp?.customStampUrl ? (
                               <img

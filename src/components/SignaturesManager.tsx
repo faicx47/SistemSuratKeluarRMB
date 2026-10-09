@@ -132,12 +132,12 @@ export const SignaturesManager: React.FC<SignaturesManagerProps> = ({
                 </div>
 
                 {/* Signature Preview */}
-                <div className="w-36 h-16 bg-white border border-slate-200 rounded-lg flex items-center justify-center p-1 relative shadow-2xs">
+                <div className="w-36 h-[50px] max-h-[50px] bg-white border border-slate-200 rounded-lg flex items-center justify-center p-1 relative shadow-2xs overflow-hidden">
                   {sig.dataUrl ? (
                     <img
                       src={sig.dataUrl}
                       alt={sig.name}
-                      className="max-h-14 max-w-[130px] object-contain"
+                      className="max-h-[50px] h-full w-auto max-w-[130px] object-contain select-none"
                     />
                   ) : (
                     <span className="text-[11px] text-slate-400 italic">Belum digores</span>
