@@ -349,17 +349,83 @@ export const SupabaseService = {
   },
 
   /**
+   * Save or upsert a single signature to Supabase database
+   */
+  async saveSignature(sig: SavedSignature): Promise<boolean> {
+    try {
+      const { error } = await supabase.from('signatures').upsert(
+        {
+          id: sig.id,
+          name: sig.name,
+          role: sig.role,
+          id_number: sig.idNumber || null,
+          data_url: sig.dataUrl,
+          signature_data: sig,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+
+      if (error) {
+        console.warn('Supabase saveSignature error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn('Supabase saveSignature exception:', e);
+      return false;
+    }
+  },
+
+  /**
+   * Delete a signature from Supabase database
+   */
+  async deleteSignature(id: string): Promise<boolean> {
+    try {
+      const { error } = await supabase.from('signatures').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase deleteSignature error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /**
    * Fetch signatures from Supabase
    */
   async fetchSignatures(): Promise<SavedSignature[] | null> {
     try {
       const { data, error } = await supabase
         .from('signatures')
-        .select('signature_data')
+        .select('*')
         .order('updated_at', { ascending: true });
 
       if (error || !data || data.length === 0) return null;
-      return data.map((d: any) => d.signature_data as SavedSignature);
+      return data.map((d: any) => {
+        if (d.signature_data) {
+          return {
+            ...d.signature_data,
+            id: d.id,
+            name: d.name || d.signature_data.name,
+            role: d.role || d.signature_data.role,
+            idNumber: d.id_number ?? d.signature_data.idNumber ?? '',
+            dataUrl: d.data_url || d.signature_data.dataUrl,
+            updatedAt: d.updated_at || d.signature_data.updatedAt,
+          };
+        }
+        return {
+          id: d.id,
+          title: d.role || 'Tanda Tangan',
+          role: d.role,
+          name: d.name,
+          idNumber: d.id_number || '',
+          dataUrl: d.data_url,
+          updatedAt: d.updated_at,
+        } as SavedSignature;
+      });
     } catch (e) {
       return null;
     }

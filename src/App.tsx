@@ -14,8 +14,8 @@ import { OrgSettingsModal } from './components/OrgSettingsModal';
 import { SendLetterModal } from './components/SendLetterModal';
 import { SupabaseSyncModal } from './components/SupabaseSyncModal';
 import { StampsManagerModal } from './components/StampsManagerModal';
-import { LetterDocument, OrganizationProfile } from './types/letter';
-import { StorageService } from './utils/storage';
+import { LetterDocument, OrganizationProfile, SavedSignature } from './types/letter';
+import { StorageService, isDefaultSignature } from './utils/storage';
 import { SupabaseService } from './utils/supabaseClient';
 import {
   generateLetterNumber,
@@ -60,6 +60,67 @@ export default function App() {
     // 2. Background sync with Supabase
     const initSupabaseSync = async () => {
       try {
+        // Sync Signatures first so new tabs get latest uploaded signatures immediately
+        const remoteSignatures = await SupabaseService.fetchSignatures();
+        if (remoteSignatures && remoteSignatures.length > 0) {
+          const localSigs = StorageService.getSignatures();
+          const sigMap = new Map<string, SavedSignature>();
+          localSigs.forEach((s) => sigMap.set(s.id, s));
+
+          let shouldPushLocalToRemote = false;
+
+          remoteSignatures.forEach((remote) => {
+            const local = sigMap.get(remote.id);
+            if (!local) {
+              sigMap.set(remote.id, remote);
+              return;
+            }
+
+            const localIsDefault = isDefaultSignature(local.dataUrl);
+            const remoteIsDefault = isDefaultSignature(remote.dataUrl);
+
+            // JIKA LOCAL punya tanda tangan riil dan remote masih SVG default, JANGAN PERNAH menimpa local!
+            if (!localIsDefault && remoteIsDefault) {
+              sigMap.set(local.id, local);
+              shouldPushLocalToRemote = true;
+            } else if (localIsDefault && !remoteIsDefault) {
+              // Remote punya tanda tangan riil dari tab/perangkat lain, gunakan remote
+              sigMap.set(remote.id, remote);
+            } else {
+              // Keduanya riil atau keduanya default, gunakan yang updatedAt-nya lebih baru
+              const localTime = new Date(local.updatedAt || 0).getTime();
+              const remoteTime = new Date(remote.updatedAt || 0).getTime();
+              if (remoteTime > localTime) {
+                sigMap.set(remote.id, remote);
+              } else if (localTime > remoteTime) {
+                sigMap.set(local.id, local);
+                shouldPushLocalToRemote = true;
+              }
+            }
+          });
+
+          // Pertahankan setiap signature lokal baru yang belum ada di database
+          localSigs.forEach((l) => {
+            if (!remoteSignatures.some((r) => r.id === l.id)) {
+              sigMap.set(l.id, l);
+              shouldPushLocalToRemote = true;
+            }
+          });
+
+          const mergedSigs = Array.from(sigMap.values());
+          localStorage.setItem('remasbara_signatures_v1', JSON.stringify(mergedSigs));
+          try {
+            window.dispatchEvent(new Event('signatures-updated'));
+          } catch {}
+
+          if (shouldPushLocalToRemote) {
+            SupabaseService.syncSignatures(mergedSigs).catch(() => {});
+          }
+        } else {
+          const localSigs = StorageService.getSignatures();
+          SupabaseService.syncSignatures(localSigs).catch(() => {});
+        }
+
         const remoteLetters = await SupabaseService.fetchLetters();
         if (remoteLetters && remoteLetters.length > 0) {
           // Merge remote letters with local
@@ -96,6 +157,28 @@ export default function App() {
     };
 
     initSupabaseSync();
+
+    // 3. Multi-Tab Synchronizer (detect changes from other browser tabs)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'remasbara_letters_v1') {
+        setLetters(StorageService.getLetters());
+      } else if (e.key === 'remasbara_org_profile_v1') {
+        setOrgProfile(StorageService.getOrgProfile());
+      } else if (e.key === 'remasbara_signatures_v1') {
+        setLetters(StorageService.getLetters());
+      }
+    };
+
+    const handleSignaturesUpdated = () => {
+      setLetters(StorageService.getLetters());
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('signatures-updated', handleSignaturesUpdated);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('signatures-updated', handleSignaturesUpdated);
+    };
   }, []);
 
   const refreshLetters = () => {

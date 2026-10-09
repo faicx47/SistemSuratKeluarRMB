@@ -59,6 +59,20 @@ export const DEFAULT_YAYASAN_SIGNATURE =
 
 export const DEFAULT_ADVISOR_SIGNATURE = DEFAULT_YAYASAN_SIGNATURE;
 
+/**
+ * Checks whether a signature dataUrl is one of the initial default SVG fallbacks
+ */
+export const isDefaultSignature = (dataUrl?: string | null): boolean => {
+  if (!dataUrl) return false;
+  return (
+    dataUrl.startsWith('data:image/svg+xml') ||
+    dataUrl === DEFAULT_CHAIRMAN_SIGNATURE ||
+    dataUrl === DEFAULT_SECRETARY_SIGNATURE ||
+    dataUrl === DEFAULT_KEMASJIDAN_SIGNATURE ||
+    dataUrl === DEFAULT_YAYASAN_SIGNATURE
+  );
+};
+
 export const INITIAL_SAVED_SIGNATURES: SavedSignature[] = [
   {
     id: 'sig-ketua-umum',
@@ -465,26 +479,21 @@ export const StorageService = {
         return INITIAL_SAVED_SIGNATURES;
       }
       const parsed: SavedSignature[] = JSON.parse(raw);
-      // Migrate legacy names and ensure Kemasjidan and Yayasan exist
-      let changed = false;
-      parsed.forEach((s) => {
-        if (s.id === 'sig-ketua-umum' && (s.name.includes('Fadlan') || !s.name)) {
-          s.name = 'Muhammad Faizal Addib';
-          s.title = 'Tanda Tangan Ketua Remaja';
-          changed = true;
-        }
-        if (s.id === 'sig-sekretaris-umum' && (s.name.includes('Nurul') || !s.name)) {
-          s.name = 'Muhammad Akbar Izzati';
-          s.title = 'Tanda Tangan Sekretaris';
-          changed = true;
-        }
-      });
-      const hasKemasjidan = parsed.some((s) => s.id === 'sig-kemasjidan' || s.name.includes('Nursyamsu'));
-      const hasYayasan = parsed.some((s) => s.id === 'sig-ketua-yayasan' || s.name.includes('Arifin'));
-      if (!hasKemasjidan || !hasYayasan) {
+      if (!Array.isArray(parsed) || parsed.length === 0) {
         localStorage.setItem(STORAGE_KEYS.SIGNATURES, JSON.stringify(INITIAL_SAVED_SIGNATURES));
         return INITIAL_SAVED_SIGNATURES;
       }
+
+      // Pastikan 4 penandatangan dasar selalu ada tanpa menimpa dataUrl / TTD yang sudah diunggah pengguna
+      let changed = false;
+      INITIAL_SAVED_SIGNATURES.forEach((defaultSig) => {
+        const found = parsed.find((s) => s.id === defaultSig.id);
+        if (!found) {
+          parsed.push(defaultSig);
+          changed = true;
+        }
+      });
+
       if (changed) {
         localStorage.setItem(STORAGE_KEYS.SIGNATURES, JSON.stringify(parsed));
       }
@@ -497,17 +506,27 @@ export const StorageService = {
   saveSignature(sig: SavedSignature): void {
     const sigs = this.getSignatures();
     const index = sigs.findIndex((s) => s.id === sig.id);
+    const updatedSig: SavedSignature = {
+      ...sig,
+      updatedAt: sig.updatedAt || new Date().toISOString(),
+    };
     if (index >= 0) {
-      sigs[index] = sig;
+      sigs[index] = updatedSig;
     } else {
-      sigs.push(sig);
+      sigs.push(updatedSig);
     }
     localStorage.setItem(STORAGE_KEYS.SIGNATURES, JSON.stringify(sigs));
+    try {
+      window.dispatchEvent(new Event('signatures-updated'));
+    } catch {}
   },
 
   deleteSignature(id: string): void {
     const sigs = this.getSignatures().filter((s) => s.id !== id);
     localStorage.setItem(STORAGE_KEYS.SIGNATURES, JSON.stringify(sigs));
+    try {
+      window.dispatchEvent(new Event('signatures-updated'));
+    } catch {}
   },
 
   getStamps(): SavedStamp[] {
@@ -588,10 +607,24 @@ export const StorageService = {
     const verificationCode = generateVerificationCode(letterNumber);
 
     const sigs = this.getSignatures();
-    const chairmanSig = sigs.find((s) => s.id === 'sig-ketua-umum') || sigs[0];
-    const secretarySig = sigs.find((s) => s.id === 'sig-sekretaris-umum') || sigs[1];
-    const kemasjidanSig = sigs.find((s) => s.id === 'sig-kemasjidan' || s.name.includes('Nursyamsu')) || INITIAL_SAVED_SIGNATURES[2];
-    const yayasanSig = sigs.find((s) => s.id === 'sig-ketua-yayasan' || s.name.includes('Arifin')) || INITIAL_SAVED_SIGNATURES[3];
+    const chairmanSig =
+      sigs.find((s) => s.id === 'sig-ketua-umum') ||
+      sigs.find((s) => s.role.toLowerCase().includes('ketua umum') || s.role.toLowerCase().includes('ketua')) ||
+      sigs[0];
+    const secretarySig =
+      sigs.find((s) => s.id === 'sig-sekretaris-umum') ||
+      sigs.find((s) => s.role.toLowerCase().includes('sekretaris')) ||
+      sigs[1];
+    const kemasjidanSig =
+      sigs.find((s) => s.id === 'sig-kemasjidan') ||
+      sigs.find((s) => s.role.toLowerCase().includes('kemasjidan') || s.name.toLowerCase().includes('nursyamsu')) ||
+      sigs[2] ||
+      INITIAL_SAVED_SIGNATURES[2];
+    const yayasanSig =
+      sigs.find((s) => s.id === 'sig-ketua-yayasan') ||
+      sigs.find((s) => s.role.toLowerCase().includes('yayasan') || s.name.toLowerCase().includes('arifin')) ||
+      sigs[3] ||
+      INITIAL_SAVED_SIGNATURES[3];
 
     return {
       id: 'doc-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),

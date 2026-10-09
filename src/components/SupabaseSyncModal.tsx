@@ -19,7 +19,7 @@ import {
   SupabaseHealth,
 } from '../utils/supabaseClient';
 import { LetterDocument, OrganizationProfile, SavedSignature } from '../types/letter';
-import { StorageService } from '../utils/storage';
+import { StorageService, isDefaultSignature } from '../utils/storage';
 
 interface SupabaseSyncModalProps {
   isOpen: boolean;
@@ -78,9 +78,51 @@ export const SupabaseSyncModal: React.FC<SupabaseSyncModalProps> = ({
       // 2. Upload org profile
       await SupabaseService.saveOrgProfile(orgProfile);
 
-      // 3. Upload signatures
+      // 3. Upload signatures (smart merge with database)
       const localSignatures = StorageService.getSignatures();
-      await SupabaseService.syncSignatures(localSignatures);
+      const remoteSigs = await SupabaseService.fetchSignatures();
+      if (remoteSigs && remoteSigs.length > 0) {
+        const sigMap = new Map<string, SavedSignature>();
+        localSignatures.forEach((s) => sigMap.set(s.id, s));
+        let pushNeeded = false;
+
+        remoteSigs.forEach((remote) => {
+          const local = sigMap.get(remote.id);
+          if (!local) {
+            sigMap.set(remote.id, remote);
+            return;
+          }
+          const localIsDef = isDefaultSignature(local.dataUrl);
+          const remoteIsDef = isDefaultSignature(remote.dataUrl);
+          if (!localIsDef && remoteIsDef) {
+            sigMap.set(local.id, local);
+            pushNeeded = true;
+          } else if (localIsDef && !remoteIsDef) {
+            sigMap.set(remote.id, remote);
+          } else {
+            const lTime = new Date(local.updatedAt || 0).getTime();
+            const rTime = new Date(remote.updatedAt || 0).getTime();
+            if (rTime > lTime) {
+              sigMap.set(remote.id, remote);
+            } else if (lTime > rTime) {
+              sigMap.set(local.id, local);
+              pushNeeded = true;
+            }
+          }
+        });
+
+        const mergedSigs = Array.from(sigMap.values());
+        localStorage.setItem('remasbara_signatures_v1', JSON.stringify(mergedSigs));
+        try {
+          window.dispatchEvent(new Event('signatures-updated'));
+        } catch {}
+
+        if (pushNeeded || mergedSigs.length > remoteSigs.length) {
+          await SupabaseService.syncSignatures(mergedSigs);
+        }
+      } else {
+        await SupabaseService.syncSignatures(localSignatures);
+      }
 
       // 4. Upload stamps
       const localStamps = StorageService.getStamps();
@@ -125,7 +167,10 @@ export const SupabaseSyncModal: React.FC<SupabaseSyncModalProps> = ({
   if (!isOpen) return null;
 
   const allTablesReady =
-    health?.tables.letters && health?.tables.org_profile && health?.tables.signatures;
+    health?.tables.letters &&
+    health?.tables.org_profile &&
+    health?.tables.signatures &&
+    health?.tables.stamps;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">

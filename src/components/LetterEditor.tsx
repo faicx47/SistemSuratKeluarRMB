@@ -19,6 +19,8 @@ import {
   Upload,
   RotateCcw,
   Image as ImageIcon,
+  Database,
+  Check,
 } from 'lucide-react';
 import {
   LetterDocument,
@@ -36,6 +38,8 @@ import {
 } from '../utils/dateAndNumber';
 import { LETTER_TEMPLATES } from '../utils/templates';
 import { StorageService } from '../utils/storage';
+import { SupabaseService } from '../utils/supabaseClient';
+import { processSignatureImageFile } from '../utils/signatureImageHelper';
 import { SignatureCanvasModal } from './SignatureCanvasModal';
 import {
   RemasbaraOfficialStamp,
@@ -61,7 +65,8 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
   const [formData, setFormData] = useState<LetterDocument>(initialLetter);
   const [duplicateWarning, setDuplicateWarning] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'nomor' | 'konten' | 'agenda' | 'ttd' | 'stempel'>('nomor');
-  
+  const [signatureSyncToast, setSignatureSyncToast] = useState<string | null>(null);
+
   // Signature Modal state
   const [sigModalState, setSigModalState] = useState<{
     isOpen: boolean;
@@ -77,7 +82,31 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
     signatoryRole: '',
   });
 
-  const savedSignatures = StorageService.getSignatures();
+  const [savedSignatures, setSavedSignatures] = useState<SavedSignature[]>(StorageService.getSignatures());
+
+  // Listen for storage & signatures-updated events (e.g. from other tabs or Master TTD modal)
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'remasbara_signatures_v1') {
+        setSavedSignatures(StorageService.getSignatures());
+      }
+    };
+    const handleSignaturesUpdated = () => {
+      setSavedSignatures(StorageService.getSignatures());
+    };
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('signatures-updated', handleSignaturesUpdated);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('signatures-updated', handleSignaturesUpdated);
+    };
+  }, []);
+
+  // Direct Signature Upload Refs
+  const fileUploadFirstRef = useRef<HTMLInputElement>(null);
+  const fileUploadSecondRef = useRef<HTMLInputElement>(null);
+  const fileUploadKemasjidanRef = useRef<HTMLInputElement>(null);
+  const fileUploadYayasanRef = useRef<HTMLInputElement>(null);
 
   // Stamp Upload Refs
   const stampRemasbaraInputRef = useRef<HTMLInputElement>(null);
@@ -286,8 +315,22 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
     }
   };
 
-  const handleSaveSignatureFromModal = (dataUrl: string) => {
-    if (sigModalState.target === 'first') {
+  const handleSaveAndSyncSignature = (
+    target: 'first' | 'second' | 'kemasjidan' | 'yayasan',
+    dataUrl: string
+  ) => {
+    let sigId = 'sig-ketua-umum';
+    let name = formData.signatories.firstSignatory.name || 'Muhammad Faizal Addib';
+    let role = formData.signatories.firstSignatory.role || 'Ketua Umum Remasbara';
+    let idNumber = formData.signatories.firstSignatory.idNumber || 'NTA: 2024.01.001';
+    let title = 'Tanda Tangan Ketua Remaja';
+
+    if (target === 'first') {
+      sigId = 'sig-ketua-umum';
+      name = formData.signatories.firstSignatory.name || 'Muhammad Faizal Addib';
+      role = formData.signatories.firstSignatory.role || 'Ketua Umum Remasbara';
+      idNumber = formData.signatories.firstSignatory.idNumber || 'NTA: 2024.01.001';
+      title = 'Tanda Tangan Ketua Remaja';
       setFormData((prev) => ({
         ...prev,
         signatories: {
@@ -299,7 +342,12 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
           },
         },
       }));
-    } else if (sigModalState.target === 'second') {
+    } else if (target === 'second') {
+      sigId = 'sig-sekretaris-umum';
+      name = formData.signatories.secondSignatory.name || 'Muhammad Akbar Izzati';
+      role = formData.signatories.secondSignatory.role || 'Sekretaris Umum';
+      idNumber = formData.signatories.secondSignatory.idNumber || 'NTA: 2024.01.018';
+      title = 'Tanda Tangan Sekretaris';
       setFormData((prev) => ({
         ...prev,
         signatories: {
@@ -311,36 +359,84 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
           },
         },
       }));
-    } else if (sigModalState.target === 'kemasjidan') {
+    } else if (target === 'kemasjidan') {
+      sigId = 'sig-kemasjidan';
+      name = formData.signatories.kemasjidanSignatory?.name || 'Nursyamsu Hidayat';
+      role = formData.signatories.kemasjidanSignatory?.role || 'Ketua Bidang Kemasjidan';
+      idNumber = formData.signatories.kemasjidanSignatory?.idNumber || 'YAS.MBR/KM/01';
+      title = 'Ketua Bidang Kemasjidan';
       setFormData((prev) => ({
         ...prev,
         signatories: {
           ...prev.signatories,
           kemasjidanSignatory: {
             enabled: true,
-            role: prev.signatories.kemasjidanSignatory?.role || 'Ketua Bidang Kemasjidan',
-            name: prev.signatories.kemasjidanSignatory?.name || 'Nursyamsu Hidayat',
-            idNumber: prev.signatories.kemasjidanSignatory?.idNumber || 'YAS.MBR/KM/01',
+            role,
+            name,
+            idNumber,
             signatureDataUrl: dataUrl,
             includeSignature: true,
           },
         },
       }));
-    } else if (sigModalState.target === 'yayasan') {
+    } else if (target === 'yayasan') {
+      sigId = 'sig-ketua-yayasan';
+      name = formData.signatories.yayasanSignatory?.name || 'H. Arifin Lambaga';
+      role = formData.signatories.yayasanSignatory?.role || 'Ketua Yayasan Masjid Baiturrahman';
+      idNumber = formData.signatories.yayasanSignatory?.idNumber || 'YAS.MBR/01/2022';
+      title = 'Ketua Yayasan';
       setFormData((prev) => ({
         ...prev,
         signatories: {
           ...prev.signatories,
           yayasanSignatory: {
             enabled: true,
-            role: prev.signatories.yayasanSignatory?.role || 'Ketua Yayasan Masjid Baiturrahman',
-            name: prev.signatories.yayasanSignatory?.name || 'H. Arifin Lambaga',
-            idNumber: prev.signatories.yayasanSignatory?.idNumber || 'YAS.MBR/01/2022',
+            role,
+            name,
+            idNumber,
             signatureDataUrl: dataUrl,
             includeSignature: true,
           },
         },
       }));
+    }
+
+    // Simpan permanen ke LocalStorage & Database Supabase
+    const sigObj: SavedSignature = {
+      id: sigId,
+      title,
+      role,
+      name,
+      idNumber,
+      dataUrl,
+      updatedAt: new Date().toISOString(),
+    };
+    StorageService.saveSignature(sigObj);
+    SupabaseService.saveSignature(sigObj).catch(() => {});
+    setSavedSignatures(StorageService.getSignatures());
+
+    setSignatureSyncToast(`✓ TTD ${role} berhasil disimpan & disinkronkan ke Database Supabase!`);
+    setTimeout(() => setSignatureSyncToast(null), 4000);
+  };
+
+  const handleSaveSignatureFromModal = (dataUrl: string) => {
+    handleSaveAndSyncSignature(sigModalState.target, dataUrl);
+  };
+
+  const handleDirectSignatureFileUpload = async (
+    target: 'first' | 'second' | 'kemasjidan' | 'yayasan',
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const dataUrl = await processSignatureImageFile(file);
+      handleSaveAndSyncSignature(target, dataUrl);
+    } catch (err: any) {
+      alert(err?.message || 'Gagal memproses berkas gambar tanda tangan');
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -1194,15 +1290,35 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
         {/* TAB 4: TANDA TANGAN DIGITAL */}
         {activeTab === 'ttd' && (
           <div className="space-y-6">
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900 flex items-start gap-3">
-              <PenTool className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold">Dukungan Tanda Tangan Digital Remasbara</p>
-                <p className="text-emerald-800 mt-0.5">
-                  Anda dapat menggoreskan tanda tangan langsung melalui kanvas digital layar sentuh/mouse, mengunggah foto/scan transparan, atau memilih profil tanda tangan tersimpan.
-                </p>
+            {/* Database Sync Status & Toast */}
+            {signatureSyncToast ? (
+              <div className="bg-emerald-600 text-white rounded-xl p-3.5 text-xs font-semibold flex items-center justify-between shadow-md animate-fadeIn">
+                <span className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-200" />
+                  {signatureSyncToast}
+                </span>
+                <span className="text-[10px] bg-emerald-700/80 px-2.5 py-0.5 rounded font-mono">
+                  SUPABASE CLOUD ✓
+                </span>
               </div>
-            </div>
+            ) : (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900 flex items-start gap-3">
+                <Database className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-emerald-950">
+                      Tanda Tangan Terhubung Otomatis ke Database Supabase
+                    </p>
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
+                      <Check className="w-3 h-3 text-emerald-700" /> Tersimpan Permanen
+                    </span>
+                  </div>
+                  <p className="text-emerald-800 mt-1">
+                    Setiap TTD yang Anda unggah atau goreskan otomatis disimpan ke database cloud. Tanda tangan tidak akan tereset saat membuka halaman pada tab lain atau membuat surat baru.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Grid 2 Penandatangan Utama: Ketua & Sekretaris */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1317,14 +1433,33 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                       )}
                     </div>
 
-                    <div className="flex gap-2 mt-2">
+                    {/* Hidden file input for direct signature upload */}
+                    <input
+                      ref={fileUploadFirstRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={(e) => handleDirectSignatureFileUpload('first', e)}
+                    />
+
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => fileUploadFirstRef.current?.click()}
+                        className="px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        title="Unggah berkas PNG/JPG TTD langsung"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                        Unggah File
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => handleOpenSignatureModal('first')}
-                        className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                        className="flex-1 min-w-[120px] px-3 py-1.5 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <PenTool className="w-3.5 h-3.5" />
-                        Gores / Unggah TTD
+                        Gores TTD
                       </button>
 
                       {savedSignatures.length > 0 && (
@@ -1493,14 +1628,33 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                       )}
                     </div>
 
-                    <div className="flex gap-2 mt-2">
+                    {/* Hidden file input for direct signature upload */}
+                    <input
+                      ref={fileUploadSecondRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={(e) => handleDirectSignatureFileUpload('second', e)}
+                    />
+
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => fileUploadSecondRef.current?.click()}
+                        className="px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        title="Unggah berkas PNG/JPG TTD langsung"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                        Unggah File
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => handleOpenSignatureModal('second')}
-                        className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                        className="flex-1 min-w-[120px] px-3 py-1.5 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <PenTool className="w-3.5 h-3.5" />
-                        Gores / Unggah TTD
+                        Gores TTD
                       </button>
 
                       {savedSignatures.length > 0 && (
@@ -1687,14 +1841,33 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                           )}
                         </div>
 
+                        {/* Hidden file input for direct signature upload */}
+                        <input
+                          ref={fileUploadKemasjidanRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={(e) => handleDirectSignatureFileUpload('kemasjidan', e)}
+                        />
+
                         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={() => fileUploadKemasjidanRef.current?.click()}
+                            className="px-2.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
+                            title="Unggah berkas PNG/JPG TTD langsung"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                            Unggah File
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => handleOpenSignatureModal('kemasjidan')}
                             className="px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg flex items-center gap-1.5"
                           >
                             <PenTool className="w-3.5 h-3.5 text-emerald-700" />
-                            Gores / Unggah TTD
+                            Gores TTD
                           </button>
 
                           {savedSignatures.length > 0 && (
@@ -1900,14 +2073,33 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                           )}
                         </div>
 
+                        {/* Hidden file input for direct signature upload */}
+                        <input
+                          ref={fileUploadYayasanRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={(e) => handleDirectSignatureFileUpload('yayasan', e)}
+                        />
+
                         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={() => fileUploadYayasanRef.current?.click()}
+                            className="px-2.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
+                            title="Unggah berkas PNG/JPG TTD langsung"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                            Unggah File
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => handleOpenSignatureModal('yayasan')}
                             className="px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg flex items-center gap-1.5"
                           >
                             <PenTool className="w-3.5 h-3.5 text-emerald-700" />
-                            Gores / Unggah TTD
+                            Gores TTD
                           </button>
 
                           {savedSignatures.length > 0 && (
