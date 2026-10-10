@@ -1695,244 +1695,12 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                 </p>
               </div>
 
-              {/* 1. KETUA BIDANG KEMASJIDAN (NURSYAMSU HIDAYAT) */}
+              {/* 1. KETUA YAYASAN (H. ARIFIN LAMBAGA) */}
               <div className="border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h5 className="text-xs font-bold text-slate-900 uppercase flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-800 text-white flex items-center justify-center text-[10px] font-bold">1</span>
-                      Mengetahui: Ketua Bidang Kemasjidan (Nursyamsu Hidayat)
-                    </h5>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Pengesahan dari Ketua Bidang Kemasjidan Yayasan Masjid Baiturrahman.
-                    </p>
-                  </div>
-
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.signatories.kemasjidanSignatory?.enabled || false}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          signatories: {
-                            ...prev.signatories,
-                            kemasjidanSignatory: {
-                              enabled: e.target.checked,
-                              role: prev.signatories.kemasjidanSignatory?.role || 'Ketua Bidang Kemasjidan',
-                              name: prev.signatories.kemasjidanSignatory?.name || 'Nursyamsu Hidayat',
-                              idNumber: prev.signatories.kemasjidanSignatory?.idNumber || 'YAS.MBR/KM/01',
-                              includeSignature: prev.signatories.kemasjidanSignatory?.includeSignature ?? true,
-                              signatureDataUrl: prev.signatories.kemasjidanSignatory?.signatureDataUrl,
-                            },
-                          },
-                        }))
-                      }
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-700"></div>
-                  </label>
-                </div>
-
-                {formData.signatories.kemasjidanSignatory?.enabled && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-200">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Jabatan:</label>
-                      <input
-                        type="text"
-                        value={formData.signatories.kemasjidanSignatory.role}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            signatories: {
-                              ...prev.signatories,
-                              kemasjidanSignatory: {
-                                ...prev.signatories.kemasjidanSignatory!,
-                                role: e.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        className="w-full text-xs bg-white border border-slate-300 rounded-lg px-3 py-2"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Pejabat:</label>
-                      <input
-                        type="text"
-                        value={formData.signatories.kemasjidanSignatory.name}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            signatories: {
-                              ...prev.signatories,
-                              kemasjidanSignatory: {
-                                ...prev.signatories.kemasjidanSignatory!,
-                                name: e.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg px-3 py-2"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Nomor Induk:</label>
-                      <input
-                        type="text"
-                        value={formData.signatories.kemasjidanSignatory.idNumber || ''}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            signatories: {
-                              ...prev.signatories,
-                              kemasjidanSignatory: {
-                                ...prev.signatories.kemasjidanSignatory!,
-                                idNumber: e.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        placeholder="YAS.MBR/KM/01"
-                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded-lg px-3 py-2"
-                      />
-                    </div>
-
-                    {/* TTD Box Kemasjidan */}
-                    <div className="md:col-span-3 pt-1">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-xs font-medium text-slate-600">
-                          Pratinjau Tanda Tangan:
-                        </label>
-                        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={formData.signatories.kemasjidanSignatory.includeSignature}
-                            onChange={(e) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                signatories: {
-                                  ...prev.signatories,
-                                  kemasjidanSignatory: {
-                                    ...prev.signatories.kemasjidanSignatory!,
-                                    includeSignature: e.target.checked,
-                                  },
-                                },
-                              }))
-                            }
-                            className="rounded text-emerald-700"
-                          />
-                          Sertakan TTD pada Surat
-                        </label>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row items-center gap-3">
-                        <div className="w-full sm:w-56 h-[60px] max-h-[60px] border border-dashed border-slate-300 rounded-lg bg-white flex items-center justify-center p-1.5 overflow-hidden">
-                          {formData.signatories.kemasjidanSignatory.signatureDataUrl ? (
-                            <img
-                              src={formData.signatories.kemasjidanSignatory.signatureDataUrl}
-                              alt="Tanda Tangan Ketua Bidang Kemasjidan"
-                              className="max-h-[50px] w-auto max-w-[160px] object-contain select-none"
-                            />
-                          ) : (
-                            <span className="text-xs text-slate-400 italic">Belum ada tanda tangan</span>
-                          )}
-                        </div>
-
-                        {/* Hidden file input for direct signature upload */}
-                        <input
-                          ref={fileUploadKemasjidanRef}
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          className="hidden"
-                          onChange={(e) => handleDirectSignatureFileUpload('kemasjidan', e)}
-                        />
-
-                        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                          <button
-                            type="button"
-                            onClick={() => fileUploadKemasjidanRef.current?.click()}
-                            className="px-2.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
-                            title="Unggah berkas PNG/JPG TTD langsung"
-                          >
-                            <Upload className="w-3.5 h-3.5 text-emerald-700" />
-                            Unggah File
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenSignatureModal('kemasjidan')}
-                            className="px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg flex items-center gap-1.5"
-                          >
-                            <PenTool className="w-3.5 h-3.5 text-emerald-700" />
-                            Gores TTD
-                          </button>
-
-                          {savedSignatures.length > 0 && (
-                            <select
-                              aria-label="Pilih tanda tangan tersimpan Kemasjidan"
-                              onChange={(e) => {
-                                const found = savedSignatures.find((s) => s.id === e.target.value);
-                                if (found) handleSelectSavedSignature('kemasjidan', found);
-                              }}
-                              defaultValue=""
-                              className="text-xs bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-2"
-                            >
-                              <option value="" disabled>
-                                Pilih Tersimpan
-                              </option>
-                              {savedSignatures.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name} ({s.role})
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Bar Stempel Bidang Kemasjidan di Sebelah Kiri */}
-                      <div className="mt-3 pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-200/80">
-                        <div className="flex items-center gap-1.5">
-                          <Award className="w-3.5 h-3.5 text-emerald-700" />
-                          <span className="text-[11px] font-semibold text-slate-800">
-                            Stempel Kemasjidan:
-                          </span>
-                          <span className="text-[10px] font-bold text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200">
-                            {(formData.kemasjidanStamp?.enabled ?? true) ? '✓ Aktif di Sebelah Kiri' : 'Non-aktif'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => stampKemasjidanInputRef.current?.click()}
-                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 rounded flex items-center gap-1 shadow-2xs transition-colors"
-                          >
-                            <Upload className="w-3 h-3 text-emerald-700" />
-                            {formData.kemasjidanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setActiveTab('stempel')}
-                            className="px-2 py-1 text-[11px] text-slate-600 hover:text-slate-900 underline"
-                          >
-                            Atur
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 2. KETUA YAYASAN (H. ARIFIN LAMBAGA) */}
-              <div className="border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h5 className="text-xs font-bold text-slate-900 uppercase flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-emerald-800 text-white flex items-center justify-center text-[10px] font-bold">2</span>
                       Mengetahui: Ketua Yayasan Masjid Baiturrahman (H. Arifin Lambaga)
                     </h5>
                     <p className="text-xs text-slate-500 mt-0.5">
@@ -2144,6 +1912,238 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                           >
                             <Upload className="w-3 h-3 text-emerald-700" />
                             {formData.yayasanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('stempel')}
+                            className="px-2 py-1 text-[11px] text-slate-600 hover:text-slate-900 underline"
+                          >
+                            Atur
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. KETUA BIDANG KEMASJIDAN (NURSYAMSU HIDAYAT) */}
+              <div className="border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 uppercase flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-emerald-800 text-white flex items-center justify-center text-[10px] font-bold">2</span>
+                      Mengetahui: Ketua Bidang Kemasjidan (Nursyamsu Hidayat)
+                    </h5>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Pengesahan dari Ketua Bidang Kemasjidan Yayasan Masjid Baiturrahman.
+                    </p>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.signatories.kemasjidanSignatory?.enabled || false}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          signatories: {
+                            ...prev.signatories,
+                            kemasjidanSignatory: {
+                              enabled: e.target.checked,
+                              role: prev.signatories.kemasjidanSignatory?.role || 'Ketua Bidang Kemasjidan',
+                              name: prev.signatories.kemasjidanSignatory?.name || 'Nursyamsu Hidayat',
+                              idNumber: prev.signatories.kemasjidanSignatory?.idNumber || 'YAS.MBR/KM/01',
+                              includeSignature: prev.signatories.kemasjidanSignatory?.includeSignature ?? true,
+                              signatureDataUrl: prev.signatories.kemasjidanSignatory?.signatureDataUrl,
+                            },
+                          },
+                        }))
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-700"></div>
+                  </label>
+                </div>
+
+                {formData.signatories.kemasjidanSignatory?.enabled && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-200">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Jabatan:</label>
+                      <input
+                        type="text"
+                        value={formData.signatories.kemasjidanSignatory.role}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            signatories: {
+                              ...prev.signatories,
+                              kemasjidanSignatory: {
+                                ...prev.signatories.kemasjidanSignatory!,
+                                role: e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                        className="w-full text-xs bg-white border border-slate-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Pejabat:</label>
+                      <input
+                        type="text"
+                        value={formData.signatories.kemasjidanSignatory.name}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            signatories: {
+                              ...prev.signatories,
+                              kemasjidanSignatory: {
+                                ...prev.signatories.kemasjidanSignatory!,
+                                name: e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                        className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nomor Induk:</label>
+                      <input
+                        type="text"
+                        value={formData.signatories.kemasjidanSignatory.idNumber || ''}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            signatories: {
+                              ...prev.signatories,
+                              kemasjidanSignatory: {
+                                ...prev.signatories.kemasjidanSignatory!,
+                                idNumber: e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                        placeholder="YAS.MBR/KM/01"
+                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+
+                    {/* TTD Box Kemasjidan */}
+                    <div className="md:col-span-3 pt-1">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-medium text-slate-600">
+                          Pratinjau Tanda Tangan:
+                        </label>
+                        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.signatories.kemasjidanSignatory.includeSignature}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                signatories: {
+                                  ...prev.signatories,
+                                  kemasjidanSignatory: {
+                                    ...prev.signatories.kemasjidanSignatory!,
+                                    includeSignature: e.target.checked,
+                                  },
+                                },
+                              }))
+                            }
+                            className="rounded text-emerald-700"
+                          />
+                          Sertakan TTD pada Surat
+                        </label>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center gap-3">
+                        <div className="w-full sm:w-56 h-[60px] max-h-[60px] border border-dashed border-slate-300 rounded-lg bg-white flex items-center justify-center p-1.5 overflow-hidden">
+                          {formData.signatories.kemasjidanSignatory.signatureDataUrl ? (
+                            <img
+                              src={formData.signatories.kemasjidanSignatory.signatureDataUrl}
+                              alt="Tanda Tangan Ketua Bidang Kemasjidan"
+                              className="max-h-[50px] w-auto max-w-[160px] object-contain select-none"
+                            />
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">Belum ada tanda tangan</span>
+                          )}
+                        </div>
+
+                        {/* Hidden file input for direct signature upload */}
+                        <input
+                          ref={fileUploadKemasjidanRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={(e) => handleDirectSignatureFileUpload('kemasjidan', e)}
+                        />
+
+                        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={() => fileUploadKemasjidanRef.current?.click()}
+                            className="px-2.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
+                            title="Unggah berkas PNG/JPG TTD langsung"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                            Unggah File
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSignatureModal('kemasjidan')}
+                            className="px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg flex items-center gap-1.5"
+                          >
+                            <PenTool className="w-3.5 h-3.5 text-emerald-700" />
+                            Gores TTD
+                          </button>
+
+                          {savedSignatures.length > 0 && (
+                            <select
+                              aria-label="Pilih tanda tangan tersimpan Kemasjidan"
+                              onChange={(e) => {
+                                const found = savedSignatures.find((s) => s.id === e.target.value);
+                                if (found) handleSelectSavedSignature('kemasjidan', found);
+                              }}
+                              defaultValue=""
+                              className="text-xs bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-2"
+                            >
+                              <option value="" disabled>
+                                Pilih Tersimpan
+                              </option>
+                              {savedSignatures.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name} ({s.role})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bar Stempel Bidang Kemasjidan di Sebelah Kiri */}
+                      <div className="mt-3 pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-200/80">
+                        <div className="flex items-center gap-1.5">
+                          <Award className="w-3.5 h-3.5 text-emerald-700" />
+                          <span className="text-[11px] font-semibold text-slate-800">
+                            Stempel Kemasjidan:
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200">
+                            {(formData.kemasjidanStamp?.enabled ?? true) ? '✓ Aktif di Sebelah Kiri' : 'Non-aktif'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => stampKemasjidanInputRef.current?.click()}
+                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 rounded flex items-center gap-1 shadow-2xs transition-colors"
+                          >
+                            <Upload className="w-3 h-3 text-emerald-700" />
+                            {formData.kemasjidanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
                           </button>
                           <button
                             type="button"

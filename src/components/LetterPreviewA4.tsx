@@ -278,65 +278,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                 Mengetahui,
               </p>
 
-              {/* JIKA KEDUANYA AKTIF: TAMPILKAN 2 KOLOM */}
+              {/* JIKA KEDUANYA AKTIF: TAMPILKAN 2 KOLOM (KIRI: KETUA YAYASAN, KANAN: KETUA BIDANG KEMASJIDAN) */}
               {letter.signatories.kemasjidanSignatory?.enabled &&
               letter.signatories.yayasanSignatory?.enabled ? (
                 <div className="grid grid-cols-2 gap-8 text-center pt-1">
-                  {/* 1. KETUA BIDANG KEMASJIDAN DENGAN STEMPEL DI SEBELAH KIRI */}
-                  <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-                    {/* STEMPEL RESMI BIDANG KEMASJIDAN TEPAT DI SEBELAH KIRI (GESER KE KANAN MENDEKATI TENGAH) */}
-                    {(letter.kemasjidanStamp?.enabled ?? true) && (
-                      <div
-                        className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
-                        style={{ transform: 'translateX(2cm)' }}
-                      >
-                        {letter.kemasjidanStamp?.customStampUrl ? (
-                          <img
-                            src={letter.kemasjidanStamp.customStampUrl}
-                            alt="Stempel Bidang Kemasjidan"
-                            style={{ opacity: letter.kemasjidanStamp.opacity ?? 0.92 }}
-                            className="w-[130px] h-[130px] object-contain transform -rotate-6 select-none"
-                          />
-                        ) : (
-                          <KemasjidanOfficialStamp
-                            color={letter.kemasjidanStamp?.color || 'emerald'}
-                            opacity={letter.kemasjidanStamp?.opacity ?? 0.92}
-                            size={135}
-                          />
-                        )}
-                      </div>
-                    )}
-
-                    <p className="text-xs font-semibold text-slate-800">
-                      {letter.signatories.kemasjidanSignatory.role}
-                    </p>
-                    <div className="h-[50px] max-h-[50px] flex items-center justify-center my-1 overflow-hidden">
-                      {letter.signatories.kemasjidanSignatory.includeSignature &&
-                      letter.signatories.kemasjidanSignatory.signatureDataUrl ? (
-                        <img
-                          src={letter.signatories.kemasjidanSignatory.signatureDataUrl}
-                          alt="Tanda Tangan Ketua Bidang Kemasjidan"
-                          className="max-h-[50px] h-full w-auto max-w-[160px] object-contain select-none block mx-auto"
-                        />
-                      ) : (
-                        <div className="h-[50px] flex items-center text-xs text-slate-300 italic">
-                          (Tanda Tangan)
-                        </div>
-                      )}
-                    </div>
-                    <div className="border-t border-slate-900 pt-1 w-48">
-                      <p className="font-bold text-xs text-slate-900 underline">
-                        {letter.signatories.kemasjidanSignatory.name}
-                      </p>
-                      {letter.signatories.kemasjidanSignatory.idNumber && (
-                        <p className="text-[10px] text-slate-600 font-mono">
-                          {letter.signatories.kemasjidanSignatory.idNumber}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 2. KETUA YAYASAN DENGAN STEMPEL DI SEBELAH KIRI */}
+                  {/* 1. KETUA YAYASAN DENGAN STEMPEL DI SEBELAH KIRI */}
                   <div className="relative flex flex-col items-center justify-between min-h-[140px]">
                     {/* STEMPEL RESMI YAYASAN TEPAT DI SEBELAH KIRI (GESER KE KANAN MENDEKATI TENGAH) */}
                     {(letter.yayasanStamp?.enabled ?? true) && (
@@ -385,6 +331,60 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                       {letter.signatories.yayasanSignatory.idNumber && (
                         <p className="text-[10px] text-slate-600 font-mono">
                           {letter.signatories.yayasanSignatory.idNumber}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 2. KETUA BIDANG KEMASJIDAN DENGAN STEMPEL DI SEBELAH KIRI */}
+                  <div className="relative flex flex-col items-center justify-between min-h-[140px]">
+                    {/* STEMPEL RESMI BIDANG KEMASJIDAN TEPAT DI SEBELAH KIRI (GESER KE KANAN MENDEKATI TENGAH) */}
+                    {(letter.kemasjidanStamp?.enabled ?? true) && (
+                      <div
+                        className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
+                        style={{ transform: 'translateX(2cm)' }}
+                      >
+                        {letter.kemasjidanStamp?.customStampUrl ? (
+                          <img
+                            src={letter.kemasjidanStamp.customStampUrl}
+                            alt="Stempel Bidang Kemasjidan"
+                            style={{ opacity: letter.kemasjidanStamp.opacity ?? 0.92 }}
+                            className="w-[130px] h-[130px] object-contain transform -rotate-6 select-none"
+                          />
+                        ) : (
+                          <KemasjidanOfficialStamp
+                            color={letter.kemasjidanStamp?.color || 'emerald'}
+                            opacity={letter.kemasjidanStamp?.opacity ?? 0.92}
+                            size={135}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    <p className="text-xs font-semibold text-slate-800">
+                      {letter.signatories.kemasjidanSignatory.role}
+                    </p>
+                    <div className="h-[50px] max-h-[50px] flex items-center justify-center my-1 overflow-hidden">
+                      {letter.signatories.kemasjidanSignatory.includeSignature &&
+                      letter.signatories.kemasjidanSignatory.signatureDataUrl ? (
+                        <img
+                          src={letter.signatories.kemasjidanSignatory.signatureDataUrl}
+                          alt="Tanda Tangan Ketua Bidang Kemasjidan"
+                          className="max-h-[50px] h-full w-auto max-w-[160px] object-contain select-none block mx-auto"
+                        />
+                      ) : (
+                        <div className="h-[50px] flex items-center text-xs text-slate-300 italic">
+                          (Tanda Tangan)
+                        </div>
+                      )}
+                    </div>
+                    <div className="border-t border-slate-900 pt-1 w-48">
+                      <p className="font-bold text-xs text-slate-900 underline">
+                        {letter.signatories.kemasjidanSignatory.name}
+                      </p>
+                      {letter.signatories.kemasjidanSignatory.idNumber && (
+                        <p className="text-[10px] text-slate-600 font-mono">
+                          {letter.signatories.kemasjidanSignatory.idNumber}
                         </p>
                       )}
                     </div>
