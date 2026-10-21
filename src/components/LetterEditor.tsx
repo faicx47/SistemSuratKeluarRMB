@@ -21,6 +21,7 @@ import {
   Image as ImageIcon,
   Database,
   Check,
+  Loader2,
 } from 'lucide-react';
 import {
   LetterDocument,
@@ -38,7 +39,7 @@ import {
 } from '../utils/dateAndNumber';
 import { LETTER_TEMPLATES } from '../utils/templates';
 import { StorageService } from '../utils/storage';
-import { SupabaseService } from '../utils/supabaseClient';
+import { SupabaseService, supabase, sanitizePayload } from '../utils/supabaseClient';
 import { processSignatureImageFile } from '../utils/signatureImageHelper';
 import { SignatureCanvasModal } from './SignatureCanvasModal';
 import {
@@ -50,7 +51,7 @@ import {
 interface LetterEditorProps {
   initialLetter: LetterDocument;
   orgProfile: OrganizationProfile;
-  onSave: (savedLetter: LetterDocument) => void;
+  onSave: (savedLetter: LetterDocument) => void | Promise<void>;
   onCancel: () => void;
   onPreview: (letter: LetterDocument) => void;
 }
@@ -66,6 +67,8 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
   const [duplicateWarning, setDuplicateWarning] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'nomor' | 'konten' | 'agenda' | 'ttd' | 'stempel'>('nomor');
   const [signatureSyncToast, setSignatureSyncToast] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isRefreshingSeq, setIsRefreshingSeq] = useState<boolean>(false);
 
   // Signature Modal state
   const [sigModalState, setSigModalState] = useState<{
@@ -193,6 +196,78 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
     const isTaken = StorageService.isLetterNumberTaken(formData.letterNumber, formData.id);
     setDuplicateWarning(isTaken);
   }, [formData.letterNumber, formData.id]);
+
+  // Ambil 50 data surat terakhir dari Supabase & tentukan angka integer terbesar agar penomoran selalu berurutan
+  const fetchAndApplyNextSequence = async () => {
+    setIsRefreshingSeq(true);
+    try {
+      const currentYear = new Date().getFullYear();
+      let maxNum = 0;
+
+      // 1. Ambil 50 data surat terakhir dari tabel Supabase
+      const { data: latestLetters, error } = await supabase
+        .from('letters')
+        .select('letter_number, created_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (!error && latestLetters && latestLetters.length > 0) {
+        latestLetters.forEach((item: any) => {
+          const numStr = item.letter_number || item.nomor_surat;
+          const match = numStr?.match(/^(\d+)/);
+          if (match) {
+            const n = parseInt(match[1], 10);
+            if (!isNaN(n) && n > maxNum) maxNum = n;
+          }
+        });
+      }
+
+      // 2. Bandingkan juga dengan arsip lokal agar nomor tidak tertinggal
+      const localLetters = StorageService.getLetters();
+      if (localLetters && localLetters.length > 0) {
+        localLetters.forEach((l) => {
+          const match = l.letterNumber?.match(/^(\d+)/);
+          if (match) {
+            const n = parseInt(match[1], 10);
+            if (!isNaN(n) && n > maxNum) maxNum = n;
+          }
+          if (l.sequenceNumber && !isNaN(l.sequenceNumber) && l.sequenceNumber > maxNum) {
+            maxNum = l.sequenceNumber;
+          }
+        });
+      }
+
+      const nextSeq = maxNum + 1;
+      const nextNumberStr = nextSeq.toString().padStart(3, '0');
+      const d = new Date(formData.dateMasehi || new Date());
+      const roman = getRomanMonth(isNaN(d.getTime()) ? new Date() : d);
+      const yr = isNaN(d.getTime()) ? currentYear : d.getFullYear();
+      const kodeOrg = orgProfile.codeIdentifier || 'RMB';
+      const newLetterNumber = `${nextNumberStr}/${formData.categoryCode}/${kodeOrg}/${roman}/${yr}`;
+
+      setFormData((prev) => {
+        if (prev.isCustomNumber) return prev;
+        return {
+          ...prev,
+          sequenceNumber: nextSeq,
+          romanMonth: roman,
+          year: yr,
+          letterNumber: newLetterNumber,
+        };
+      });
+    } catch (err) {
+      console.warn('Gagal sinkronisasi nomor urut otomatis dari Supabase:', err);
+    } finally {
+      setIsRefreshingSeq(false);
+    }
+  };
+
+  // Saat form surat dibuka (terutama untuk surat baru), ambil nomor urut otomatis dari Supabase
+  useEffect(() => {
+    if (!initialLetter.createdAt) {
+      fetchAndApplyNextSequence();
+    }
+  }, []);
 
   // Recalculate auto number when seq, cat, date changes in auto mode
   const handleUpdateAutoNumber = (seq: number, catCode: LetterCategoryCode, dateMasehi: string) => {
@@ -547,9 +622,20 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      // Cek seluruh nilai payload: pastikan tidak ada field bernilai undefined (fallback ke null / "")
+      const cleanPayload = sanitizePayload(formData);
+      await onSave(cleanPayload);
+    } catch (err: any) {
+      console.error("Error catch simpan surat:", err);
+      alert("Terjadi kesalahan: " + (err?.message || err));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -737,14 +823,12 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          const next = StorageService.getNextSequenceNumber();
-                          handleUpdateAutoNumber(next, formData.categoryCode, formData.dateMasehi);
-                        }}
-                        className="px-2.5 py-2 text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg whitespace-nowrap"
-                        title="Ambil nomor urut berikutnya dari arsip"
+                        onClick={fetchAndApplyNextSequence}
+                        disabled={isRefreshingSeq}
+                        className="px-2.5 py-2 text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 border border-emerald-200 rounded-lg whitespace-nowrap inline-flex items-center gap-1 transition-colors"
+                        title="Ambil nomor urut berikutnya dari database Supabase"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingSeq ? 'animate-spin' : ''}`} />
                       </button>
                     </div>
                     <span className="text-[10px] text-slate-400">Terakhir tersimpan + 1</span>
@@ -1695,244 +1779,12 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                 </p>
               </div>
 
-              {/* 1. KETUA YAYASAN (H. ARIFIN LAMBAGA) */}
+              {/* 1. KETUA BIDANG KEMASJIDAN (NURSYAMSU HIDAYAT) */}
               <div className="border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h5 className="text-xs font-bold text-slate-900 uppercase flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-emerald-800 text-white flex items-center justify-center text-[10px] font-bold">1</span>
-                      Mengetahui: Ketua Yayasan Masjid Baiturrahman (H. Arifin Lambaga)
-                    </h5>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Pengesahan tertinggi dari Ketua Yayasan Masjid Baiturrahman.
-                    </p>
-                  </div>
-
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.signatories.yayasanSignatory?.enabled || false}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          signatories: {
-                            ...prev.signatories,
-                            yayasanSignatory: {
-                              enabled: e.target.checked,
-                              role: prev.signatories.yayasanSignatory?.role || 'Ketua Yayasan Masjid Baiturrahman',
-                              name: prev.signatories.yayasanSignatory?.name || 'H. Arifin Lambaga',
-                              idNumber: prev.signatories.yayasanSignatory?.idNumber || 'YAS.MBR/01/2022',
-                              includeSignature: prev.signatories.yayasanSignatory?.includeSignature ?? true,
-                              signatureDataUrl: prev.signatories.yayasanSignatory?.signatureDataUrl,
-                            },
-                          },
-                        }))
-                      }
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-700"></div>
-                  </label>
-                </div>
-
-                {formData.signatories.yayasanSignatory?.enabled && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-200">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Jabatan:</label>
-                      <input
-                        type="text"
-                        value={formData.signatories.yayasanSignatory.role}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            signatories: {
-                              ...prev.signatories,
-                              yayasanSignatory: {
-                                ...prev.signatories.yayasanSignatory!,
-                                role: e.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        className="w-full text-xs bg-white border border-slate-300 rounded-lg px-3 py-2"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Pejabat:</label>
-                      <input
-                        type="text"
-                        value={formData.signatories.yayasanSignatory.name}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            signatories: {
-                              ...prev.signatories,
-                              yayasanSignatory: {
-                                ...prev.signatories.yayasanSignatory!,
-                                name: e.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg px-3 py-2"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Nomor Induk:</label>
-                      <input
-                        type="text"
-                        value={formData.signatories.yayasanSignatory.idNumber || ''}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            signatories: {
-                              ...prev.signatories,
-                              yayasanSignatory: {
-                                ...prev.signatories.yayasanSignatory!,
-                                idNumber: e.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        placeholder="YAS.MBR/01/2022"
-                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded-lg px-3 py-2"
-                      />
-                    </div>
-
-                    {/* TTD Box Yayasan */}
-                    <div className="md:col-span-3 pt-1">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-xs font-medium text-slate-600">
-                          Pratinjau Tanda Tangan:
-                        </label>
-                        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={formData.signatories.yayasanSignatory.includeSignature}
-                            onChange={(e) =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                signatories: {
-                                  ...prev.signatories,
-                                  yayasanSignatory: {
-                                    ...prev.signatories.yayasanSignatory!,
-                                    includeSignature: e.target.checked,
-                                  },
-                                },
-                              }))
-                            }
-                            className="rounded text-emerald-700"
-                          />
-                          Sertakan TTD pada Surat
-                        </label>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row items-center gap-3">
-                        <div className="w-full sm:w-56 h-[60px] max-h-[60px] border border-dashed border-slate-300 rounded-lg bg-white flex items-center justify-center p-1.5 overflow-hidden">
-                          {formData.signatories.yayasanSignatory.signatureDataUrl ? (
-                            <img
-                              src={formData.signatories.yayasanSignatory.signatureDataUrl}
-                              alt="Tanda Tangan Ketua Yayasan"
-                              className="max-h-[50px] w-auto max-w-[160px] object-contain select-none"
-                            />
-                          ) : (
-                            <span className="text-xs text-slate-400 italic">Belum ada tanda tangan</span>
-                          )}
-                        </div>
-
-                        {/* Hidden file input for direct signature upload */}
-                        <input
-                          ref={fileUploadYayasanRef}
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          className="hidden"
-                          onChange={(e) => handleDirectSignatureFileUpload('yayasan', e)}
-                        />
-
-                        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                          <button
-                            type="button"
-                            onClick={() => fileUploadYayasanRef.current?.click()}
-                            className="px-2.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
-                            title="Unggah berkas PNG/JPG TTD langsung"
-                          >
-                            <Upload className="w-3.5 h-3.5 text-emerald-700" />
-                            Unggah File
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenSignatureModal('yayasan')}
-                            className="px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg flex items-center gap-1.5"
-                          >
-                            <PenTool className="w-3.5 h-3.5 text-emerald-700" />
-                            Gores TTD
-                          </button>
-
-                          {savedSignatures.length > 0 && (
-                            <select
-                              aria-label="Pilih tanda tangan tersimpan Yayasan"
-                              onChange={(e) => {
-                                const found = savedSignatures.find((s) => s.id === e.target.value);
-                                if (found) handleSelectSavedSignature('yayasan', found);
-                              }}
-                              defaultValue=""
-                              className="text-xs bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-2"
-                            >
-                              <option value="" disabled>
-                                Pilih Tersimpan
-                              </option>
-                              {savedSignatures.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name} ({s.role})
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Bar Stempel Yayasan di Sebelah Kiri */}
-                      <div className="mt-3 pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-200/80">
-                        <div className="flex items-center gap-1.5">
-                          <Award className="w-3.5 h-3.5 text-emerald-700" />
-                          <span className="text-[11px] font-semibold text-slate-800">
-                            Stempel Yayasan:
-                          </span>
-                          <span className="text-[10px] font-bold text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200">
-                            {(formData.yayasanStamp?.enabled ?? true) ? '✓ Aktif di Sebelah Kiri' : 'Non-aktif'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => stampYayasanInputRef.current?.click()}
-                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 rounded flex items-center gap-1 shadow-2xs transition-colors"
-                          >
-                            <Upload className="w-3 h-3 text-emerald-700" />
-                            {formData.yayasanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setActiveTab('stempel')}
-                            className="px-2 py-1 text-[11px] text-slate-600 hover:text-slate-900 underline"
-                          >
-                            Atur
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 2. KETUA BIDANG KEMASJIDAN (NURSYAMSU HIDAYAT) */}
-              <div className="border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h5 className="text-xs font-bold text-slate-900 uppercase flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-emerald-800 text-white flex items-center justify-center text-[10px] font-bold">2</span>
                       Mengetahui: Ketua Bidang Kemasjidan (Nursyamsu Hidayat)
                     </h5>
                     <p className="text-xs text-slate-500 mt-0.5">
@@ -2144,6 +1996,238 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                           >
                             <Upload className="w-3 h-3 text-emerald-700" />
                             {formData.kemasjidanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('stempel')}
+                            className="px-2 py-1 text-[11px] text-slate-600 hover:text-slate-900 underline"
+                          >
+                            Atur
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. KETUA YAYASAN (H. ARIFIN LAMBAGA) */}
+              <div className="border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 uppercase flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-emerald-800 text-white flex items-center justify-center text-[10px] font-bold">2</span>
+                      Mengetahui: Ketua Yayasan Masjid Baiturrahman (H. Arifin Lambaga)
+                    </h5>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Pengesahan tertinggi dari Ketua Yayasan Masjid Baiturrahman.
+                    </p>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.signatories.yayasanSignatory?.enabled || false}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          signatories: {
+                            ...prev.signatories,
+                            yayasanSignatory: {
+                              enabled: e.target.checked,
+                              role: prev.signatories.yayasanSignatory?.role || 'Ketua Yayasan Masjid Baiturrahman',
+                              name: prev.signatories.yayasanSignatory?.name || 'H. Arifin Lambaga',
+                              idNumber: prev.signatories.yayasanSignatory?.idNumber || 'YAS.MBR/01/2022',
+                              includeSignature: prev.signatories.yayasanSignatory?.includeSignature ?? true,
+                              signatureDataUrl: prev.signatories.yayasanSignatory?.signatureDataUrl,
+                            },
+                          },
+                        }))
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-700"></div>
+                  </label>
+                </div>
+
+                {formData.signatories.yayasanSignatory?.enabled && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-200">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Jabatan:</label>
+                      <input
+                        type="text"
+                        value={formData.signatories.yayasanSignatory.role}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            signatories: {
+                              ...prev.signatories,
+                              yayasanSignatory: {
+                                ...prev.signatories.yayasanSignatory!,
+                                role: e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                        className="w-full text-xs bg-white border border-slate-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nama Pejabat:</label>
+                      <input
+                        type="text"
+                        value={formData.signatories.yayasanSignatory.name}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            signatories: {
+                              ...prev.signatories,
+                              yayasanSignatory: {
+                                ...prev.signatories.yayasanSignatory!,
+                                name: e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                        className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Nomor Induk:</label>
+                      <input
+                        type="text"
+                        value={formData.signatories.yayasanSignatory.idNumber || ''}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            signatories: {
+                              ...prev.signatories,
+                              yayasanSignatory: {
+                                ...prev.signatories.yayasanSignatory!,
+                                idNumber: e.target.value,
+                              },
+                            },
+                          }))
+                        }
+                        placeholder="YAS.MBR/01/2022"
+                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+
+                    {/* TTD Box Yayasan */}
+                    <div className="md:col-span-3 pt-1">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-medium text-slate-600">
+                          Pratinjau Tanda Tangan:
+                        </label>
+                        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.signatories.yayasanSignatory.includeSignature}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                signatories: {
+                                  ...prev.signatories,
+                                  yayasanSignatory: {
+                                    ...prev.signatories.yayasanSignatory!,
+                                    includeSignature: e.target.checked,
+                                  },
+                                },
+                              }))
+                            }
+                            className="rounded text-emerald-700"
+                          />
+                          Sertakan TTD pada Surat
+                        </label>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center gap-3">
+                        <div className="w-full sm:w-56 h-[60px] max-h-[60px] border border-dashed border-slate-300 rounded-lg bg-white flex items-center justify-center p-1.5 overflow-hidden">
+                          {formData.signatories.yayasanSignatory.signatureDataUrl ? (
+                            <img
+                              src={formData.signatories.yayasanSignatory.signatureDataUrl}
+                              alt="Tanda Tangan Ketua Yayasan"
+                              className="max-h-[50px] w-auto max-w-[160px] object-contain select-none"
+                            />
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">Belum ada tanda tangan</span>
+                          )}
+                        </div>
+
+                        {/* Hidden file input for direct signature upload */}
+                        <input
+                          ref={fileUploadYayasanRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={(e) => handleDirectSignatureFileUpload('yayasan', e)}
+                        />
+
+                        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={() => fileUploadYayasanRef.current?.click()}
+                            className="px-2.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors"
+                            title="Unggah berkas PNG/JPG TTD langsung"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                            Unggah File
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSignatureModal('yayasan')}
+                            className="px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg flex items-center gap-1.5"
+                          >
+                            <PenTool className="w-3.5 h-3.5 text-emerald-700" />
+                            Gores TTD
+                          </button>
+
+                          {savedSignatures.length > 0 && (
+                            <select
+                              aria-label="Pilih tanda tangan tersimpan Yayasan"
+                              onChange={(e) => {
+                                const found = savedSignatures.find((s) => s.id === e.target.value);
+                                if (found) handleSelectSavedSignature('yayasan', found);
+                              }}
+                              defaultValue=""
+                              className="text-xs bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-2"
+                            >
+                              <option value="" disabled>
+                                Pilih Tersimpan
+                              </option>
+                              {savedSignatures.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name} ({s.role})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bar Stempel Yayasan di Sebelah Kiri */}
+                      <div className="mt-3 pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-200/80">
+                        <div className="flex items-center gap-1.5">
+                          <Award className="w-3.5 h-3.5 text-emerald-700" />
+                          <span className="text-[11px] font-semibold text-slate-800">
+                            Stempel Yayasan:
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200">
+                            {(formData.yayasanStamp?.enabled ?? true) ? '✓ Aktif di Sebelah Kiri' : 'Non-aktif'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => stampYayasanInputRef.current?.click()}
+                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 rounded flex items-center gap-1 shadow-2xs transition-colors"
+                          >
+                            <Upload className="w-3 h-3 text-emerald-700" />
+                            {formData.yayasanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
                           </button>
                           <button
                             type="button"
@@ -2756,10 +2840,20 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
 
             <button
               type="submit"
-              className="flex-1 sm:flex-none px-5 py-2.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-sm inline-flex items-center justify-center gap-1.5 transition-colors"
+              disabled={isSaving}
+              className="flex-1 sm:flex-none px-5 py-2.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg shadow-sm inline-flex items-center justify-center gap-1.5 transition-colors"
             >
-              <Save className="w-4 h-4" />
-              Simpan ke Arsip
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Menyimpan ke Arsip...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Simpan ke Arsip
+                </>
+              )}
             </button>
           </div>
         </div>

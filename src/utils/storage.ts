@@ -17,6 +17,50 @@ const STORAGE_KEYS = {
   COUNTER: 'remasbara_sequence_counter_v1',
 };
 
+/**
+ * Menyimpan array surat ke localStorage dengan penanganan QuotaExceededError
+ * Jika kuota 5MB browser tercapai karena ukuran gambar TTD/stempel, fungsi ini memangkas
+ * cache surat lama di lokal secara aman tanpa merusak data asli yang tersimpan di Cloud Supabase.
+ */
+function safeSetLetters(letters: LetterDocument[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.LETTERS, JSON.stringify(letters));
+  } catch (e: any) {
+    console.warn('LocalStorage quota limit reached, memangkas cache lokal:', e);
+    try {
+      // Simpan 10 surat paling baru di memori lokal agar tidak melebihi kuota
+      const trimmed = letters.slice(0, 10);
+      localStorage.setItem(STORAGE_KEYS.LETTERS, JSON.stringify(trimmed));
+    } catch {
+      try {
+        const minimal = letters.slice(0, 3);
+        localStorage.setItem(STORAGE_KEYS.LETTERS, JSON.stringify(minimal));
+      } catch {
+        try {
+          // Jika masih penuh, bersihkan gambar base64 signature/stamp dari cache lokal surat
+          const stripped = letters.slice(0, 5).map((l) => ({
+            ...l,
+            signatories: {
+              ...l.signatories,
+              firstSignatory: { ...l.signatories.firstSignatory, signatureDataUrl: undefined },
+              secondSignatory: { ...l.signatories.secondSignatory, signatureDataUrl: undefined },
+              kemasjidanSignatory: l.signatories.kemasjidanSignatory
+                ? { ...l.signatories.kemasjidanSignatory, signatureDataUrl: undefined }
+                : undefined,
+              yayasanSignatory: l.signatories.yayasanSignatory
+                ? { ...l.signatories.yayasanSignatory, signatureDataUrl: undefined }
+                : undefined,
+            },
+          }));
+          localStorage.setItem(STORAGE_KEYS.LETTERS, JSON.stringify(stripped));
+        } catch {
+          console.warn('LocalStorage penuh, arsip tetap tersimpan aman di Database Supabase.');
+        }
+      }
+    }
+  }
+}
+
 // Clean SVG default signature curves for immediate visual excellence
 export const DEFAULT_CHAIRMAN_SIGNATURE =
   'data:image/svg+xml;utf8,' +
@@ -336,7 +380,7 @@ export const StorageService = {
       const raw = localStorage.getItem(STORAGE_KEYS.LETTERS);
       if (!raw) {
         const initial = getInitialSeedLetters();
-        localStorage.setItem(STORAGE_KEYS.LETTERS, JSON.stringify(initial));
+        safeSetLetters(initial);
         return initial;
       }
       const parsed: LetterDocument[] = JSON.parse(raw);
@@ -387,7 +431,7 @@ export const StorageService = {
         return updatedDoc;
       });
       if (hasMigration) {
-        localStorage.setItem(STORAGE_KEYS.LETTERS, JSON.stringify(migrated));
+        safeSetLetters(migrated);
       }
       return migrated;
     } catch (e) {
@@ -404,12 +448,12 @@ export const StorageService = {
     } else {
       letters.unshift({ ...letter, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     }
-    localStorage.setItem(STORAGE_KEYS.LETTERS, JSON.stringify(letters));
+    safeSetLetters(letters);
   },
 
   deleteLetter(id: string): void {
     const letters = this.getLetters().filter((l) => l.id !== id);
-    localStorage.setItem(STORAGE_KEYS.LETTERS, JSON.stringify(letters));
+    safeSetLetters(letters);
   },
 
   getNextSequenceNumber(): number {
@@ -417,6 +461,12 @@ export const StorageService = {
     const currentYear = new Date().getFullYear();
     let maxSeq = 0;
     letters.forEach((l) => {
+      // Ambil angka dari awal string letterNumber jika ada
+      const match = l.letterNumber?.match(/^(\d+)/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (!isNaN(n) && n > maxSeq) maxSeq = n;
+      }
       if (l.year === currentYear && l.sequenceNumber && !isNaN(l.sequenceNumber)) {
         if (l.sequenceNumber > maxSeq) {
           maxSeq = l.sequenceNumber;
@@ -592,9 +642,13 @@ export const StorageService = {
   },
 
   createNewBlankLetter(templateId?: string): LetterDocument {
+    return this.createNewBlankLetterWithSeq(this.getNextSequenceNumber(), templateId);
+  },
+
+  createNewBlankLetterWithSeq(customSeq?: number, templateId?: string): LetterDocument {
     const org = this.getOrgProfile();
     const now = new Date();
-    const nextSeq = this.getNextSequenceNumber();
+    const nextSeq = customSeq && !isNaN(customSeq) && customSeq > 0 ? customSeq : this.getNextSequenceNumber();
     const romanMonth = getRomanMonth(now);
     const year = now.getFullYear();
     const dateFormatted = formatIndonesianDate(now);

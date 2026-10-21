@@ -9,6 +9,29 @@ export const SUPABASE_ANON_KEY =
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+/**
+ * Utility to deeply sanitize payloads before saving to Supabase / Storage
+ * Replaces any undefined values with null or empty string so Supabase never chokes
+ */
+export function sanitizePayload<T>(obj: T): T {
+  if (obj === undefined) return null as any;
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizePayload) as any;
+  }
+  const cleaned: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val === undefined) {
+      cleaned[key] = null;
+    } else if (typeof val === 'object' && val !== null) {
+      cleaned[key] = sanitizePayload(val);
+    } else {
+      cleaned[key] = val;
+    }
+  }
+  return cleaned as T;
+}
+
 export const SUPABASE_SQL_SCHEMA = `-- ========================================================
 -- SKEMA DATABASE SUPABASE UNTUK SISTEM SURAT RESMI REMASBARA
 -- Jalankan script ini di Supabase Dashboard -> SQL Editor
@@ -195,33 +218,89 @@ export const SupabaseService = {
   },
 
   /**
-   * Upsert a letter document to Supabase
+   * Mengambil nomor urut surat terbesar berikutnya dari Supabase & penyimpanan lokal
+   * Mengambil 50 data surat terakhir, mem-parsing angka awal (^(\d+)),
+   * dan menghitung angka integer terbesar + 1 agar selalu berurutan tanpa bentrok.
    */
-  async saveLetter(letter: LetterDocument): Promise<boolean> {
+  async getNextLetterSequence(): Promise<number> {
+    let maxNum = 0;
     try {
-      const { error } = await supabase.from('letters').upsert(
-        {
-          id: letter.id,
-          letter_number: letter.letterNumber,
-          category_code: letter.categoryCode,
-          subject: letter.subject,
-          status: letter.status,
-          recipient_name: letter.recipientName,
-          date_masehi: letter.dateMasehi,
-          document_data: letter,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      const { data: latestLetters, error } = await supabase
+        .from('letters')
+        .select('letter_number, created_at')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (!error && latestLetters && latestLetters.length > 0) {
+        latestLetters.forEach((item) => {
+          const match = item.letter_number?.match(/^(\d+)/);
+          if (match) {
+            const n = parseInt(match[1], 10);
+            if (!isNaN(n) && n > maxNum) maxNum = n;
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Gagal fetch surat terakhir dari Supabase untuk penomoran:', e);
+    }
+
+    // Bandingkan juga dengan data lokal di localStorage
+    try {
+      const raw = localStorage.getItem('remasbara_letters_v1');
+      if (raw) {
+        const localLetters: any[] = JSON.parse(raw);
+        if (Array.isArray(localLetters)) {
+          localLetters.forEach((l) => {
+            const match = l.letterNumber?.match(/^(\d+)/);
+            if (match) {
+              const n = parseInt(match[1], 10);
+              if (!isNaN(n) && n > maxNum) maxNum = n;
+            }
+            if (l.sequenceNumber && !isNaN(l.sequenceNumber) && l.sequenceNumber > maxNum) {
+              maxNum = l.sequenceNumber;
+            }
+          });
+        }
+      }
+    } catch {}
+
+    return maxNum + 1;
+  },
+
+  /**
+   * Upsert a letter document to Supabase
+   * Menjamin tidak ada field bernilai undefined (disanitasi ke null/string)
+   * Mengembalikan status sukses dan error eksplisit jika terjadi kegagalan
+   */
+  async saveLetter(letter: LetterDocument): Promise<{ success: boolean; error?: string; data?: any }> {
+    try {
+      const cleanLetter = sanitizePayload(letter);
+      const payload = {
+        id: cleanLetter.id,
+        letter_number: cleanLetter.letterNumber || '',
+        category_code: cleanLetter.categoryCode || 'UND',
+        subject: cleanLetter.subject || '',
+        status: cleanLetter.status || 'draft',
+        recipient_name: cleanLetter.recipientName || '',
+        date_masehi: cleanLetter.dateMasehi || new Date().toISOString().slice(0, 10),
+        document_data: cleanLetter,
+        direction: 'Surat Keluar',
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from('letters')
+        .upsert(payload, { onConflict: 'id' })
+        .select();
 
       if (error) {
-        console.warn('Supabase saveLetter error:', error.message);
-        return false;
+        console.error('Gagal simpan surat ke Supabase:', error);
+        return { success: false, error: error.message };
       }
-      return true;
-    } catch (e) {
-      console.warn('Supabase saveLetter exception:', e);
-      return false;
+      return { success: true, data };
+    } catch (e: any) {
+      console.error('Supabase saveLetter exception:', e);
+      return { success: false, error: e?.message || String(e) };
     }
   },
 

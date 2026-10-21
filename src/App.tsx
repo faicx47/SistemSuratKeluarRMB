@@ -16,7 +16,7 @@ import { SupabaseSyncModal } from './components/SupabaseSyncModal';
 import { StampsManagerModal } from './components/StampsManagerModal';
 import { LetterDocument, OrganizationProfile, SavedSignature } from './types/letter';
 import { StorageService, isDefaultSignature } from './utils/storage';
-import { SupabaseService } from './utils/supabaseClient';
+import { SupabaseService, sanitizePayload } from './utils/supabaseClient';
 import {
   generateLetterNumber,
   generateVerificationCode,
@@ -191,9 +191,15 @@ export default function App() {
     SupabaseService.saveOrgProfile(profile).catch(() => {});
   };
 
-  const handleStartCreate = () => {
-    const blank = StorageService.createNewBlankLetter();
-    setActiveLetter(blank);
+  const handleStartCreate = async () => {
+    try {
+      const nextSeq = await SupabaseService.getNextLetterSequence();
+      const blank = StorageService.createNewBlankLetterWithSeq(nextSeq);
+      setActiveLetter(blank);
+    } catch {
+      const blank = StorageService.createNewBlankLetter();
+      setActiveLetter(blank);
+    }
     setCurrentView('create');
   };
 
@@ -202,8 +208,8 @@ export default function App() {
     setCurrentView('edit');
   };
 
-  const handleDuplicate = (source: LetterDocument) => {
-    const nextSeq = StorageService.getNextSequenceNumber();
+  const handleDuplicate = async (source: LetterDocument) => {
+    const nextSeq = await SupabaseService.getNextLetterSequence();
     const now = new Date();
     const roman = getRomanMonth(now);
     const yr = now.getFullYear();
@@ -234,26 +240,62 @@ export default function App() {
       updatedAt: new Date().toISOString(),
     };
 
-    StorageService.saveLetter(duplicated);
+    const clean = sanitizePayload(duplicated);
+    const res = await SupabaseService.saveLetter(clean);
+    if (!res.success) {
+      alert("Gagal menduplikasi surat ke Supabase: " + (res.error || 'Terjadi kesalahan'));
+      return;
+    }
+
+    try {
+      StorageService.saveLetter(clean);
+    } catch (e) {
+      console.warn('Storage warning:', e);
+    }
     refreshLetters();
-    SupabaseService.saveLetter(duplicated).catch(() => {});
     showToast(`Surat berhasil diduplikasi menjadi nomor: ${newNumber}`);
   };
 
-  const handleDeleteLetter = (id: string) => {
+  const handleDeleteLetter = async (id: string) => {
     StorageService.deleteLetter(id);
     refreshLetters();
-    SupabaseService.deleteLetter(id).catch(() => {});
+    await SupabaseService.deleteLetter(id).catch(() => {});
     showToast('Surat berhasil dihapus dari arsip');
   };
 
-  const handleSaveLetter = (savedLetter: LetterDocument) => {
-    StorageService.saveLetter(savedLetter);
-    refreshLetters();
-    SupabaseService.saveLetter(savedLetter).catch(() => {});
-    setCurrentView('archive');
-    setActiveLetter(null);
-    showToast(`Surat ${savedLetter.letterNumber} berhasil disimpan ke arsip!`);
+  const handleSaveLetter = async (savedLetter: LetterDocument) => {
+    try {
+      // 1. Pastikan seluruh nilai payload tidak ada yang bernilai undefined (fallback ke null / "")
+      const cleanLetter = sanitizePayload(savedLetter);
+
+      // 2. Simpan surat ke tabel Supabase (letters)
+      const res = await SupabaseService.saveLetter(cleanLetter);
+      if (!res.success) {
+        console.error("Gagal simpan surat ke Supabase:", res.error);
+        alert("Gagal simpan surat: " + (res.error || "Gagal menghubungi database Supabase"));
+        return;
+      }
+
+      // 3. Simpan ke local storage dengan proteksi kuota aman (tidak melempar QuotaExceededError)
+      try {
+        StorageService.saveLetter(cleanLetter);
+      } catch (storageErr) {
+        console.warn("Storage warning (surat tetap aman di Cloud Supabase):", storageErr);
+      }
+
+      // 4. Refresh data surat dari database / local
+      await refreshLetters();
+
+      // 5. Tutup modal/tampilan form dan kembali ke arsip surat
+      setCurrentView('archive');
+      setActiveLetter(null);
+
+      alert("Surat berhasil disimpan!");
+      showToast(`Surat ${cleanLetter.letterNumber} berhasil disimpan ke arsip!`);
+    } catch (err: any) {
+      console.error("Error catch simpan surat:", err);
+      alert("Terjadi kesalahan: " + (err?.message || err));
+    }
   };
 
   const handleOpenPreview = (letter: LetterDocument) => {
