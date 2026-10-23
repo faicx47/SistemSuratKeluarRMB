@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Printer, Copy, Check, Edit3, X, ZoomIn, ZoomOut, RotateCcw, Send } from 'lucide-react';
 import { LetterDocument, OrganizationProfile } from '../types/letter';
 import { LetterPreviewA4 } from './LetterPreviewA4';
@@ -22,6 +22,22 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+
+  // Pasang listener keyboard keydown agar pengguna dapat menutup modal preview dengan menekan tombol 'Escape' (Esc)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen || !letter) return null;
 
@@ -180,8 +196,12 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg ml-2"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg ml-2 flex items-center gap-1.5"
+            title="Tutup Pratinjau (Tekan tombol Esc)"
           >
+            <span className="hidden sm:inline-block text-[10px] font-mono font-semibold px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
+              Esc
+            </span>
             <X className="w-5 h-5" />
           </button>
         </div>

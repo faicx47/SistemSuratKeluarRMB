@@ -30,8 +30,18 @@ export const SignatureCanvasModal: React.FC<SignatureCanvasModalProps> = ({
       setTimeout(() => {
         initCanvas();
       }, 50);
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+          onClose();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+      };
     }
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   const initCanvas = () => {
     const canvas = canvasRef.current;

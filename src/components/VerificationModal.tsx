@@ -20,6 +20,19 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
   const [searched, setSearched] = useState(false);
   const [matchedLetter, setMatchedLetter] = useState<LetterDocument | null>(null);
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSearch = (e: React.FormEvent) => {

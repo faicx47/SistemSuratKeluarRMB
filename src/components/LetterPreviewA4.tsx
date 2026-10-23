@@ -116,7 +116,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
         </div>
 
         {/* PARAGRAF PEMBUKA */}
-        <p className="mb-4 text-justify indent-8 leading-relaxed">
+        <p className="mb-4 text-justify indent-8 leading-relaxed whitespace-pre-line">
           {letter.openingParagraph}
         </p>
 
@@ -141,14 +141,14 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
               <div className="flex">
                 <span className="w-28 font-semibold text-slate-700">Tempat</span>
                 <span className="mr-2">:</span>
-                <span className="font-medium text-slate-900">{letter.eventDetails.location}</span>
+                <span className="font-medium text-slate-900 whitespace-pre-line">{letter.eventDetails.location}</span>
               </div>
             )}
             {letter.eventDetails.agenda && (
               <div className="flex">
                 <span className="w-28 font-semibold text-slate-700">Agenda / Acara</span>
                 <span className="mr-2">:</span>
-                <span className="font-bold text-slate-900">{letter.eventDetails.agenda}</span>
+                <span className="font-bold text-slate-900 whitespace-pre-line">{letter.eventDetails.agenda}</span>
               </div>
             )}
             {letter.eventDetails.dressCode && (
@@ -164,14 +164,14 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
         {/* PARAGRAF ISI */}
         <div className="space-y-3 mb-4 text-justify">
           {letter.contentParagraphs.map((p, idx) => (
-            <p key={idx} className="indent-8 leading-relaxed">
+            <p key={idx} className="indent-8 leading-relaxed whitespace-pre-line">
               {p}
             </p>
           ))}
         </div>
 
         {/* PARAGRAF PENUTUP */}
-        <p className="mb-3 text-justify indent-8 leading-relaxed">
+        <p className="mb-3 text-justify indent-8 leading-relaxed whitespace-pre-line">
           {letter.closingParagraph}
         </p>
 

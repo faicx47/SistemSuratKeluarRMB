@@ -49,6 +49,24 @@ export const SignaturesManager: React.FC<SignaturesManagerProps> = ({
     };
   }, []);
 
+  // Listen for Escape key to close modal or close drawer
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        if (editingSig) {
+          setEditingSig(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, editingSig, onClose]);
+
   if (!isOpen) return null;
 
   const showFeedback = (msg: string) => {

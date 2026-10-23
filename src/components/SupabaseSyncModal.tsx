@@ -46,8 +46,17 @@ export const SupabaseSyncModal: React.FC<SupabaseSyncModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       runCheck();
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+          onClose();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+      };
     }
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   const runCheck = async () => {
     setChecking(true);

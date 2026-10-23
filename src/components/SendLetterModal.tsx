@@ -57,6 +57,20 @@ export const SendLetterModal: React.FC<SendLetterModalProps> = ({
     }
   }, [letter]);
 
+  // Listen for Escape key to close modal
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   const cleanFileName = useMemo(() => {
     if (!letter) return 'Surat_Resmi_REMASBARA.pdf';
     const safeNumber = letter.letterNumber.replace(/[\/\\:\*\?"<>\|]/g, '_');
