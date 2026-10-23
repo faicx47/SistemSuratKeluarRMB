@@ -63,7 +63,29 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
   onCancel,
   onPreview,
 }) => {
-  const [formData, setFormData] = useState<LetterDocument>(initialLetter);
+  const [formData, setFormData] = useState<LetterDocument>(() => ({
+    ...initialLetter,
+    contentParagraphs: Array.isArray(initialLetter?.contentParagraphs)
+      ? initialLetter.contentParagraphs
+      : [''],
+    copies: Array.isArray(initialLetter?.copies) ? initialLetter.copies : [],
+    signatories: initialLetter?.signatories || {
+      firstSignatory: {
+        name: 'Muhammad Faizal Addib',
+        role: 'Ketua Umum Remasbara',
+        includeSignature: false,
+      },
+      secondSignatory: {
+        name: 'Muhammad Akbar Izzati',
+        role: 'Sekretaris Umum',
+        includeSignature: false,
+      },
+    },
+    verification: initialLetter?.verification || {
+      enabled: true,
+      verificationCode: 'VRF-RMB',
+    },
+  }));
   const [duplicateWarning, setDuplicateWarning] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'nomor' | 'konten' | 'agenda' | 'ttd' | 'stempel'>('nomor');
   const [signatureSyncToast, setSignatureSyncToast] = useState<string | null>(null);
@@ -1126,19 +1148,19 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                 </button>
               </div>
 
-              {formData.contentParagraphs.map((p, idx) => (
+              {(formData.contentParagraphs || []).map((p, idx) => (
                 <div key={idx} className="flex gap-2 items-start">
                   <span className="text-xs text-slate-400 font-mono mt-2 w-5 text-right">
                     {idx + 1}.
                   </span>
                   <textarea
                     rows={2}
-                    value={p}
+                    value={p || ''}
                     onChange={(e) => handleUpdateParagraph(idx, e.target.value)}
                     className="flex-1 text-xs bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-600 leading-relaxed"
                     placeholder={`Isi paragraf ke-${idx + 1}...`}
                   />
-                  {formData.contentParagraphs.length > 1 && (
+                  {(formData.contentParagraphs || []).length > 1 && (
                     <button
                       type="button"
                       onClick={() => handleRemoveParagraph(idx)}

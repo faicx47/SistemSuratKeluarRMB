@@ -48,7 +48,9 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
-        onClose();
+        if (typeof onClose === 'function') {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);

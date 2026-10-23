@@ -62,7 +62,9 @@ export const SendLetterModal: React.FC<SendLetterModalProps> = ({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
-        onClose();
+        if (typeof onClose === 'function') {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -222,10 +224,10 @@ export const SendLetterModal: React.FC<SendLetterModalProps> = ({
           `Assalamu'alaikum Warahmatullahi Wabarakatuh,\n\n` +
           `Kepada Yth.\n${letter.recipientName}\n${letter.recipientInstitution}\n\n` +
           `Dengan hormat,\nBerikut kami lampirkan berkas surat resmi berformat PDF:\n\n` +
-          `Nomor Surat : ${letter.letterNumber}\n` +
-          `Perihal     : ${letter.subject}\n` +
+          `Nomor Surat : ${letter.letterNumber || '-'}\n` +
+          `Perihal     : ${letter.subject || '-'}\n` +
           `Lampiran    : ${cleanFileName}\n\n` +
-          `Kode Verifikasi Keabsahan: ${letter.verification.verificationCode || '-'}\n\n` +
+          `Kode Verifikasi Keabsahan: ${letter.verification?.verificationCode || '-'}\n\n` +
           `Wassalamu'alaikum Warahmatullahi Wabarakatuh,\n` +
           `Pengurus Remaja Masjid Baiturrahman (REMASBARA)\n` +
           `Sekretariat: ${orgProfile.address}, ${orgProfile.city}\nHotline: ${orgProfile.phone}`
@@ -440,7 +442,7 @@ export const SendLetterModal: React.FC<SendLetterModalProps> = ({
                   <div><strong>Penerima:</strong> {letter.recipientName}</div>
                   <div><strong>Instansi:</strong> {letter.recipientInstitution}</div>
                   <div><strong>Perihal:</strong> {letter.subject}</div>
-                  <div><strong>Kode Sah:</strong> {letter.verification.verificationCode || '-'}</div>
+                  <div><strong>Kode Sah:</strong> {letter.verification?.verificationCode || '-'}</div>
                 </div>
               </div>
             </div>

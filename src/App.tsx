@@ -14,6 +14,7 @@ import { OrgSettingsModal } from './components/OrgSettingsModal';
 import { SendLetterModal } from './components/SendLetterModal';
 import { SupabaseSyncModal } from './components/SupabaseSyncModal';
 import { StampsManagerModal } from './components/StampsManagerModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { LetterDocument, OrganizationProfile, SavedSignature } from './types/letter';
 import { StorageService, isDefaultSignature } from './utils/storage';
 import { SupabaseService, sanitizePayload } from './utils/supabaseClient';
@@ -341,35 +342,37 @@ export default function App() {
 
       {/* Main Content Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        {currentView === 'archive' && (
-          <LetterList
-            letters={letters}
-            onNewLetter={handleStartCreate}
-            onEditLetter={handleStartEdit}
-            onPreviewLetter={handleOpenPreview}
-            onDuplicateLetter={handleDuplicate}
-            onDeleteLetter={handleDeleteLetter}
-            onDirectPrint={handleDirectPrint}
-            onOpenVerify={() => setIsVerifyOpen(true)}
-            onSendLetter={handleOpenSend}
-          />
-        )}
+        <ErrorBoundary fallbackTitle="Kendala Memuat Tampilan Utama">
+          {currentView === 'archive' && (
+            <LetterList
+              letters={letters}
+              onNewLetter={handleStartCreate}
+              onEditLetter={handleStartEdit}
+              onPreviewLetter={handleOpenPreview}
+              onDuplicateLetter={handleDuplicate}
+              onDeleteLetter={handleDeleteLetter}
+              onDirectPrint={handleDirectPrint}
+              onOpenVerify={() => setIsVerifyOpen(true)}
+              onSendLetter={handleOpenSend}
+            />
+          )}
 
-        {(currentView === 'create' || currentView === 'edit') && activeLetter && (
-          <LetterEditor
-            initialLetter={activeLetter}
-            orgProfile={orgProfile}
-            onSave={handleSaveLetter}
-            onCancel={() => {
-              setCurrentView('archive');
-              setActiveLetter(null);
-            }}
-            onPreview={(doc) => {
-              setPreviewLetter(doc);
-              setIsPreviewOpen(true);
-            }}
-          />
-        )}
+          {(currentView === 'create' || currentView === 'edit') && activeLetter && (
+            <LetterEditor
+              initialLetter={activeLetter}
+              orgProfile={orgProfile}
+              onSave={handleSaveLetter}
+              onCancel={() => {
+                setCurrentView('archive');
+                setActiveLetter(null);
+              }}
+              onPreview={(doc) => {
+                setPreviewLetter(doc);
+                setIsPreviewOpen(true);
+              }}
+            />
+          )}
+        </ErrorBoundary>
       </main>
 
       {/* Official Institutional Footer */}

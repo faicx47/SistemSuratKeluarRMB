@@ -24,7 +24,9 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
-        onClose();
+        if (typeof onClose === 'function') {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -40,20 +42,21 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
     if (!query.trim()) return;
 
     const clean = query.trim().toLowerCase();
-    const found = letters.find(
-      (l) =>
-        l.verification.verificationCode.toLowerCase() === clean ||
-        l.letterNumber.toLowerCase() === clean ||
-        clean.includes(l.verification.verificationCode.toLowerCase())
-    );
+    const found = (letters || []).find((l) => {
+      if (!l) return false;
+      const vCode = (l.verification?.verificationCode || '').toLowerCase();
+      const lNum = (l.letterNumber || '').toLowerCase();
+      return (vCode && vCode === clean) || (lNum && lNum === clean) || (vCode && clean.includes(vCode));
+    });
 
     setMatchedLetter(found || null);
     setSearched(true);
   };
 
   const handleQuickTest = (code: string) => {
+    if (!code) return;
     setQuery(code);
-    const found = letters.find((l) => l.verification.verificationCode === code);
+    const found = (letters || []).find((l) => l?.verification?.verificationCode === code);
     setMatchedLetter(found || null);
     setSearched(true);
   };
@@ -174,31 +177,31 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                     <div className="flex justify-between border-b border-slate-100 pb-1.5">
                       <span className="text-slate-500">Penandatangan 1:</span>
                       <span className="font-semibold text-slate-900">
-                        {matchedLetter.signatories.firstSignatory.name} ({matchedLetter.signatories.firstSignatory.role})
+                        {matchedLetter.signatories?.firstSignatory?.name || '-'} ({matchedLetter.signatories?.firstSignatory?.role || '-'})
                       </span>
                     </div>
 
                     <div className="flex justify-between border-b border-slate-100 pb-1.5">
                       <span className="text-slate-500">Penandatangan 2:</span>
                       <span className="font-semibold text-slate-900">
-                        {matchedLetter.signatories.secondSignatory.name} ({matchedLetter.signatories.secondSignatory.role})
+                        {matchedLetter.signatories?.secondSignatory?.name || '-'} ({matchedLetter.signatories?.secondSignatory?.role || '-'})
                       </span>
                     </div>
 
-                    {matchedLetter.signatories.kemasjidanSignatory?.enabled && (
+                    {matchedLetter.signatories?.kemasjidanSignatory?.enabled && (
                       <div className="flex justify-between border-b border-slate-100 pb-1.5">
                         <span className="text-slate-500">Mengetahui 1:</span>
                         <span className="font-semibold text-slate-900">
-                          {matchedLetter.signatories.kemasjidanSignatory.name} ({matchedLetter.signatories.kemasjidanSignatory.role})
+                          {matchedLetter.signatories?.kemasjidanSignatory?.name || '-'} ({matchedLetter.signatories?.kemasjidanSignatory?.role || '-'})
                         </span>
                       </div>
                     )}
 
-                    {matchedLetter.signatories.yayasanSignatory?.enabled && (
+                    {matchedLetter.signatories?.yayasanSignatory?.enabled && (
                       <div className="flex justify-between border-b border-slate-100 pb-1.5">
                         <span className="text-slate-500">Mengetahui 2:</span>
                         <span className="font-semibold text-slate-900">
-                          {matchedLetter.signatories.yayasanSignatory.name} ({matchedLetter.signatories.yayasanSignatory.role})
+                          {matchedLetter.signatories?.yayasanSignatory?.name || '-'} ({matchedLetter.signatories?.yayasanSignatory?.role || '-'})
                         </span>
                       </div>
                     )}

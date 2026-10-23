@@ -9,16 +9,64 @@ import {
 } from './RemasbaraVisuals';
 
 interface LetterPreviewA4Props {
-  letter: LetterDocument;
-  orgProfile: OrganizationProfile;
+  letter: LetterDocument | null | undefined;
+  orgProfile?: OrganizationProfile | null;
 }
 
 export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgProfile }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
+  // Fallback safely if letter is missing or malformed
+  if (!letter) {
+    return (
+      <div className="print-sheet bg-white text-slate-500 w-full max-w-[210mm] min-h-[120mm] mx-auto p-12 shadow-xl border border-slate-200 flex items-center justify-center text-center">
+        <p className="text-sm italic">Data dokumen surat tidak tersedia untuk dipratinjau.</p>
+      </div>
+    );
+  }
+
+  // Safe normalized profile with bullet-proof fallbacks
+  const safeProfile = orgProfile || {
+    name: 'Remasbara',
+    address: 'Jl. Tole Iskandar KM 3',
+    kelurahan: 'Mekarjaya',
+    kecamatan: 'Sukmajaya',
+    city: 'Kota Depok',
+    postalCode: '16412',
+    phone: '0896-4333-1415',
+    email: 'remasbaraofficial@gmail.com',
+    codeIdentifier: 'RMB',
+    logoUrl: undefined,
+  };
+
+  // Safe normalized signatories
+  const safeSignatories = letter.signatories || {};
+  const safeFirstSig = safeSignatories.firstSignatory || {
+    name: 'Muhammad Faizal Addib',
+    role: 'Ketua Umum Remasbara',
+    includeSignature: false,
+    idNumber: undefined,
+    signatureDataUrl: undefined,
+  };
+  const safeSecondSig = safeSignatories.secondSignatory || {
+    name: 'Muhammad Akbar Izzati',
+    role: 'Sekretaris Umum',
+    includeSignature: false,
+    idNumber: undefined,
+    signatureDataUrl: undefined,
+  };
+  const safeKemasjidanSig = safeSignatories.kemasjidanSignatory;
+  const safeYayasanSig = safeSignatories.yayasanSignatory;
+
+  const safeVerification = letter.verification || { enabled: false, verificationCode: '' };
+  const safeContentParagraphs = Array.isArray(letter.contentParagraphs)
+    ? letter.contentParagraphs
+    : [];
+  const safeCopies = Array.isArray(letter.copies) ? letter.copies : [];
+
   useEffect(() => {
-    if (letter.verification.enabled) {
-      const verifData = `REMASBARA-MBR|NO:${letter.letterNumber}|TGL:${letter.dateFormattedMasehi}|HAL:${letter.subject}|KODE:${letter.verification.verificationCode}`;
+    if (safeVerification?.enabled && safeVerification?.verificationCode) {
+      const verifData = `REMASBARA-MBR|NO:${letter?.letterNumber || ''}|TGL:${letter?.dateFormattedMasehi || ''}|HAL:${letter?.subject || ''}|KODE:${safeVerification.verificationCode}`;
       QRCode.toDataURL(verifData, {
         width: 140,
         margin: 1,
@@ -29,8 +77,16 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
       })
         .then((url) => setQrDataUrl(url))
         .catch((err) => console.error('Failed generating QR:', err));
+    } else {
+      setQrDataUrl('');
     }
-  }, [letter.verification.enabled, letter.verification.verificationCode, letter.letterNumber, letter.dateFormattedMasehi, letter.subject]);
+  }, [
+    safeVerification?.enabled,
+    safeVerification?.verificationCode,
+    letter?.letterNumber,
+    letter?.dateFormattedMasehi,
+    letter?.subject,
+  ]);
 
   return (
     <div className="print-sheet bg-white text-slate-900 w-full max-w-[210mm] min-h-[297mm] mx-auto p-8 sm:p-12 shadow-xl border border-slate-200 print:border-none print:shadow-none print:p-0 font-serif-doc text-[13.5px] leading-relaxed flex flex-col justify-between">
@@ -39,10 +95,10 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
         <div className="flex items-center gap-4 border-b-[2.5px] border-slate-900 pb-2">
           {/* Logo Remasbara */}
           <div className="shrink-0 flex items-center justify-center">
-            {orgProfile.logoUrl ? (
+            {safeProfile.logoUrl ? (
               <img
-                src={orgProfile.logoUrl}
-                alt={`Logo ${orgProfile.name}`}
+                src={safeProfile.logoUrl}
+                alt={`Logo ${safeProfile.name || 'Remasbara'}`}
                 className="w-20 h-20 sm:w-[88px] sm:h-[88px] object-contain"
               />
             ) : (
@@ -59,10 +115,10 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
               CIKUMPA MEKARJAYA SUKMAJAYA KOTA DEPOK
             </h2>
             <p className="text-[10px] text-slate-600 mt-0.5 leading-snug">
-              Sekretariat: {orgProfile.address}, {orgProfile.kelurahan}, {orgProfile.kecamatan}, {orgProfile.city} {orgProfile.postalCode}
+              Sekretariat: {safeProfile.address || 'Jl. Tole Iskandar KM 3'}, {safeProfile.kelurahan || 'Mekarjaya'}, {safeProfile.kecamatan || 'Sukmajaya'}, {safeProfile.city || 'Kota Depok'} {safeProfile.postalCode || '16412'}
             </p>
             <p className="text-[9.5px] text-slate-500 leading-snug">
-              Hotline: {orgProfile.phone || '0896-4333-1415'} · Surel: {orgProfile.email || 'remasbaraofficial@gmail.com'}
+              Hotline: {safeProfile.phone || '0896-4333-1415'} · Surel: {safeProfile.email || 'remasbaraofficial@gmail.com'}
             </p>
           </div>
         </div>
@@ -76,7 +132,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
               <span className="w-20 font-medium">Nomor</span>
               <span className="mr-2">:</span>
               <span className="font-semibold font-mono tracking-tight text-slate-900">
-                {letter.letterNumber}
+                {letter.letterNumber || '-'}
               </span>
             </div>
             <div className="flex">
@@ -87,7 +143,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
             <div className="flex">
               <span className="w-20 font-medium">Perihal</span>
               <span className="mr-2">:</span>
-              <span className="font-bold underline text-slate-900">{letter.subject}</span>
+              <span className="font-bold underline text-slate-900">{letter.subject || '(Tanpa Perihal)'}</span>
             </div>
           </div>
 
@@ -98,7 +154,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
               </p>
             )}
             <p className="font-semibold text-slate-900 text-[13px]">
-              {letter.city}, {letter.dateFormattedMasehi}
+              {letter.city || 'Depok'}, {letter.dateFormattedMasehi || ''}
             </p>
           </div>
         </div>
@@ -106,19 +162,21 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
         {/* TUJUAN SURAT */}
         <div className="mb-6 space-y-1">
           <p>Kepada Yth.</p>
-          <p className="font-bold text-slate-900">{letter.recipientName}</p>
-          <p>{letter.recipientInstitution}</p>
+          <p className="font-bold text-slate-900">{letter.recipientName || 'Bapak/Ibu'}</p>
+          {letter.recipientInstitution && <p>{letter.recipientInstitution}</p>}
         </div>
 
         {/* SALAM PEMBUKA */}
         <div className="mb-3">
-          <p className="italic font-medium">{letter.openingGreeting},</p>
+          <p className="italic font-medium">{letter.openingGreeting || "Assalamu'alaikum Wr. Wb."},</p>
         </div>
 
         {/* PARAGRAF PEMBUKA */}
-        <p className="mb-4 text-justify indent-8 leading-relaxed whitespace-pre-line">
-          {letter.openingParagraph}
-        </p>
+        {letter.openingParagraph && (
+          <p className="mb-4 text-justify indent-8 leading-relaxed whitespace-pre-line">
+            {letter.openingParagraph || ''}
+          </p>
+        )}
 
         {/* DETAIL KEGIATAN / ACARA (JIKA ADA) */}
         {letter.eventDetails && letter.eventDetails.enabled && (
@@ -141,14 +199,14 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
               <div className="flex">
                 <span className="w-28 font-semibold text-slate-700">Tempat</span>
                 <span className="mr-2">:</span>
-                <span className="font-medium text-slate-900 whitespace-pre-line">{letter.eventDetails.location}</span>
+                <span className="font-medium text-slate-900 whitespace-pre-line">{letter.eventDetails.location || ''}</span>
               </div>
             )}
             {letter.eventDetails.agenda && (
               <div className="flex">
                 <span className="w-28 font-semibold text-slate-700">Agenda / Acara</span>
                 <span className="mr-2">:</span>
-                <span className="font-bold text-slate-900 whitespace-pre-line">{letter.eventDetails.agenda}</span>
+                <span className="font-bold text-slate-900 whitespace-pre-line">{letter.eventDetails.agenda || ''}</span>
               </div>
             )}
             {letter.eventDetails.dressCode && (
@@ -162,22 +220,26 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
         )}
 
         {/* PARAGRAF ISI */}
-        <div className="space-y-3 mb-4 text-justify">
-          {letter.contentParagraphs.map((p, idx) => (
-            <p key={idx} className="indent-8 leading-relaxed whitespace-pre-line">
-              {p}
-            </p>
-          ))}
-        </div>
+        {safeContentParagraphs.length > 0 && (
+          <div className="space-y-3 mb-4 text-justify">
+            {safeContentParagraphs.map((p, idx) => (
+              <p key={idx} className="indent-8 leading-relaxed whitespace-pre-line">
+                {p || ''}
+              </p>
+            ))}
+          </div>
+        )}
 
         {/* PARAGRAF PENUTUP */}
-        <p className="mb-3 text-justify indent-8 leading-relaxed whitespace-pre-line">
-          {letter.closingParagraph}
-        </p>
+        {letter.closingParagraph && (
+          <p className="mb-3 text-justify indent-8 leading-relaxed whitespace-pre-line">
+            {letter.closingParagraph || ''}
+          </p>
+        )}
 
         {/* SALAM PENUTUP */}
         <div className="mb-6">
-          <p className="italic font-medium">{letter.closingGreeting}</p>
+          <p className="italic font-medium">{letter.closingGreeting || "Wassalamu'alaikum Wr. Wb."}</p>
         </div>
 
         {/* AREA TANDA TANGAN RESMI */}
@@ -185,7 +247,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
           <div className="relative grid grid-cols-2 gap-8 text-center pt-2">
             {/* PENANDATANGAN 1 (KETUA UMUM) DENGAN STEMPEL DI SEBELAH KIRI */}
             <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-              {/* STEMPEL RESMI REMASBARA TEPAT DI SEBELAH KIRI KETUA UMUM (DENGAN GESERAN TAMBAHAN 1CM KE KANAN MENDEKATI TENGAH) */}
+              {/* STEMPEL RESMI REMASBARA TEPAT DI SEBELAH KIRI KETUA UMUM */}
               {letter.stamp?.enabled && (
                 <div
                   className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
@@ -209,13 +271,12 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
               )}
 
               <p className="text-xs font-semibold text-slate-800 font-sans">
-                {letter.signatories.firstSignatory.role}
+                {safeFirstSig.role || 'Ketua Umum'}
               </p>
               <div className="h-[50px] max-h-[50px] flex items-center justify-center my-1 overflow-hidden">
-                {letter.signatories.firstSignatory.includeSignature &&
-                letter.signatories.firstSignatory.signatureDataUrl ? (
+                {safeFirstSig.includeSignature && safeFirstSig.signatureDataUrl ? (
                   <img
-                    src={letter.signatories.firstSignatory.signatureDataUrl}
+                    src={safeFirstSig.signatureDataUrl}
                     alt="Tanda Tangan Ketua Umum"
                     className="max-h-[50px] h-full w-auto max-w-[160px] object-contain select-none block mx-auto"
                   />
@@ -227,11 +288,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
               </div>
               <div className="border-t border-slate-900 pt-1 w-44 font-sans">
                 <p className="font-bold text-xs text-slate-900 underline">
-                  {letter.signatories.firstSignatory.name}
+                  {safeFirstSig.name || 'Muhammad Faizal Addib'}
                 </p>
-                {letter.signatories.firstSignatory.idNumber && (
+                {safeFirstSig.idNumber && (
                   <p className="text-[10px] text-slate-600 font-mono">
-                    {letter.signatories.firstSignatory.idNumber}
+                    {safeFirstSig.idNumber}
                   </p>
                 )}
               </div>
@@ -240,13 +301,12 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
             {/* PENANDATANGAN 2 (SEKRETARIS UMUM) */}
             <div className="flex flex-col items-center justify-between min-h-[140px]">
               <p className="text-xs font-semibold text-slate-800 font-sans">
-                {letter.signatories.secondSignatory.role}
+                {safeSecondSig.role || 'Sekretaris Umum'}
               </p>
               <div className="h-[50px] max-h-[50px] flex items-center justify-center my-1 overflow-hidden">
-                {letter.signatories.secondSignatory.includeSignature &&
-                letter.signatories.secondSignatory.signatureDataUrl ? (
+                {safeSecondSig.includeSignature && safeSecondSig.signatureDataUrl ? (
                   <img
-                    src={letter.signatories.secondSignatory.signatureDataUrl}
+                    src={safeSecondSig.signatureDataUrl}
                     alt="Tanda Tangan Sekretaris Umum"
                     className="max-h-[50px] h-full w-auto max-w-[160px] object-contain select-none block mx-auto"
                   />
@@ -258,11 +318,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
               </div>
               <div className="border-t border-slate-900 pt-1 w-44 font-sans">
                 <p className="font-bold text-xs text-slate-900 underline">
-                  {letter.signatories.secondSignatory.name}
+                  {safeSecondSig.name || 'Muhammad Akbar Izzati'}
                 </p>
-                {letter.signatories.secondSignatory.idNumber && (
+                {safeSecondSig.idNumber && (
                   <p className="text-[10px] text-slate-600 font-mono">
-                    {letter.signatories.secondSignatory.idNumber}
+                    {safeSecondSig.idNumber}
                   </p>
                 )}
               </div>
@@ -270,21 +330,20 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
           </div>
 
           {/* AREA MENGETAHUI (PENGURUS YAYASAN) */}
-          {((letter.signatories.kemasjidanSignatory && letter.signatories.kemasjidanSignatory.enabled) ||
-            (letter.signatories.yayasanSignatory && letter.signatories.yayasanSignatory.enabled) ||
-            (letter.signatories.advisorSignatory && letter.signatories.advisorSignatory.enabled)) && (
+          {((safeKemasjidanSig && safeKemasjidanSig.enabled) ||
+            (safeYayasanSig && safeYayasanSig.enabled) ||
+            (safeSignatories.advisorSignatory && safeSignatories.advisorSignatory.enabled)) && (
             <div className="mt-6 pt-2 font-sans">
               <p className="text-center text-xs font-semibold text-slate-700 mb-2">
                 Mengetahui,
               </p>
 
               {/* JIKA KEDUANYA AKTIF: TAMPILKAN 2 KOLOM (KIRI: KETUA BIDANG KEMASJIDAN, KANAN: KETUA YAYASAN) */}
-              {letter.signatories.kemasjidanSignatory?.enabled &&
-              letter.signatories.yayasanSignatory?.enabled ? (
+              {safeKemasjidanSig?.enabled && safeYayasanSig?.enabled ? (
                 <div className="grid grid-cols-2 gap-8 text-center pt-1">
                   {/* 1. KETUA BIDANG KEMASJIDAN DENGAN STEMPEL DI SEBELAH KIRI */}
                   <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-                    {/* STEMPEL RESMI BIDANG KEMASJIDAN TEPAT DI SEBELAH KIRI (GESER KE KANAN MENDEKATI TENGAH) */}
+                    {/* STEMPEL RESMI BIDANG KEMASJIDAN TEPAT DI SEBELAH KIRI */}
                     {(letter.kemasjidanStamp?.enabled ?? true) && (
                       <div
                         className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
@@ -308,13 +367,12 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                     )}
 
                     <p className="text-xs font-semibold text-slate-800">
-                      {letter.signatories.kemasjidanSignatory.role}
+                      {safeKemasjidanSig.role || 'Ketua Bidang Kemasjidan'}
                     </p>
                     <div className="h-[50px] max-h-[50px] flex items-center justify-center my-1 overflow-hidden">
-                      {letter.signatories.kemasjidanSignatory.includeSignature &&
-                      letter.signatories.kemasjidanSignatory.signatureDataUrl ? (
+                      {safeKemasjidanSig.includeSignature && safeKemasjidanSig.signatureDataUrl ? (
                         <img
-                          src={letter.signatories.kemasjidanSignatory.signatureDataUrl}
+                          src={safeKemasjidanSig.signatureDataUrl}
                           alt="Tanda Tangan Ketua Bidang Kemasjidan"
                           className="max-h-[50px] h-full w-auto max-w-[160px] object-contain select-none block mx-auto"
                         />
@@ -326,11 +384,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                     </div>
                     <div className="border-t border-slate-900 pt-1 w-48">
                       <p className="font-bold text-xs text-slate-900 underline">
-                        {letter.signatories.kemasjidanSignatory.name}
+                        {safeKemasjidanSig.name || 'Nursyamsu Hidayat'}
                       </p>
-                      {letter.signatories.kemasjidanSignatory.idNumber && (
+                      {safeKemasjidanSig.idNumber && (
                         <p className="text-[10px] text-slate-600 font-mono">
-                          {letter.signatories.kemasjidanSignatory.idNumber}
+                          {safeKemasjidanSig.idNumber}
                         </p>
                       )}
                     </div>
@@ -338,7 +396,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
 
                   {/* 2. KETUA YAYASAN DENGAN STEMPEL DI SEBELAH KIRI */}
                   <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-                    {/* STEMPEL RESMI YAYASAN TEPAT DI SEBELAH KIRI (GESER KE KANAN MENDEKATI TENGAH) */}
+                    {/* STEMPEL RESMI YAYASAN TEPAT DI SEBELAH KIRI */}
                     {(letter.yayasanStamp?.enabled ?? true) && (
                       <div
                         className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
@@ -362,13 +420,12 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                     )}
 
                     <p className="text-xs font-semibold text-slate-800">
-                      {letter.signatories.yayasanSignatory.role}
+                      {safeYayasanSig.role || 'Ketua Yayasan Masjid Baiturrahman'}
                     </p>
                     <div className="h-[50px] max-h-[50px] flex items-center justify-center my-1 overflow-hidden">
-                      {letter.signatories.yayasanSignatory.includeSignature &&
-                      letter.signatories.yayasanSignatory.signatureDataUrl ? (
+                      {safeYayasanSig.includeSignature && safeYayasanSig.signatureDataUrl ? (
                         <img
-                          src={letter.signatories.yayasanSignatory.signatureDataUrl}
+                          src={safeYayasanSig.signatureDataUrl}
                           alt="Tanda Tangan Ketua Yayasan"
                           className="max-h-[50px] h-full w-auto max-w-[160px] object-contain select-none block mx-auto"
                         />
@@ -380,11 +437,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                     </div>
                     <div className="border-t border-slate-900 pt-1 w-48">
                       <p className="font-bold text-xs text-slate-900 underline">
-                        {letter.signatories.yayasanSignatory.name}
+                        {safeYayasanSig.name || 'H. Arifin Lambaga'}
                       </p>
-                      {letter.signatories.yayasanSignatory.idNumber && (
+                      {safeYayasanSig.idNumber && (
                         <p className="text-[10px] text-slate-600 font-mono">
-                          {letter.signatories.yayasanSignatory.idNumber}
+                          {safeYayasanSig.idNumber}
                         </p>
                       )}
                     </div>
@@ -394,19 +451,19 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                 /* JIKA HANYA SATU YANG AKTIF: TENGAH DENGAN STEMPEL DI SEBELAH KIRI */
                 <div className="flex flex-col items-center justify-center text-center">
                   {(() => {
-                    const isKemasjidan = letter.signatories.kemasjidanSignatory?.enabled;
-                    const isYayasan = letter.signatories.yayasanSignatory?.enabled;
+                    const isKemasjidan = safeKemasjidanSig?.enabled;
+                    const isYayasan = safeYayasanSig?.enabled;
                     const activeAdvisor = isKemasjidan
-                      ? letter.signatories.kemasjidanSignatory
+                      ? safeKemasjidanSig
                       : isYayasan
-                      ? letter.signatories.yayasanSignatory
-                      : letter.signatories.advisorSignatory;
+                      ? safeYayasanSig
+                      : safeSignatories?.advisorSignatory;
 
                     if (!activeAdvisor) return null;
 
                     return (
                       <div className="relative flex flex-col items-center justify-between min-h-[140px]">
-                        {/* Stempel di sebelah kiri untuk single advisor (geser ke kanan mendekati tengah) */}
+                        {/* Stempel di sebelah kiri untuk single advisor */}
                         {isKemasjidan && (letter.kemasjidanStamp?.enabled ?? true) && (
                           <div
                             className="absolute -left-12 sm:-left-16 top-1 z-10 pointer-events-none"
@@ -451,13 +508,13 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                         )}
 
                         <p className="text-xs font-bold text-slate-900">
-                          {activeAdvisor.role}
+                          {activeAdvisor.role || 'Penasihat'}
                         </p>
                         <div className="h-[50px] max-h-[50px] flex items-center justify-center my-1 overflow-hidden">
                           {activeAdvisor.includeSignature && activeAdvisor.signatureDataUrl ? (
                             <img
                               src={activeAdvisor.signatureDataUrl}
-                              alt={`Tanda Tangan ${activeAdvisor.role}`}
+                              alt={`Tanda Tangan ${activeAdvisor.role || 'Penasihat'}`}
                               className="max-h-[50px] h-full w-auto max-w-[160px] object-contain select-none block mx-auto"
                             />
                           ) : (
@@ -468,7 +525,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                         </div>
                         <div className="border-t border-slate-900 pt-1 w-52">
                           <p className="font-bold text-xs text-slate-900 underline">
-                            {activeAdvisor.name}
+                            {activeAdvisor.name || '-'}
                           </p>
                           {activeAdvisor.idNumber && (
                             <p className="text-[10px] text-slate-600 font-mono">
@@ -490,12 +547,12 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
       <div className="mt-8 pt-4 border-t border-slate-200 flex items-end justify-between gap-4 font-sans text-xs">
         {/* Tembusan */}
         <div className="space-y-0.5">
-          {letter.copies && letter.copies.length > 0 && (
+          {safeCopies.length > 0 && (
             <>
               <p className="font-semibold text-slate-700 text-[11px]">Tembusan:</p>
               <ol className="list-decimal list-inside text-[10px] text-slate-600 space-y-0.5">
-                {letter.copies.map((copy, i) => (
-                  <li key={i}>{copy}</li>
+                {safeCopies.map((copy, i) => (
+                  <li key={i}>{copy || ''}</li>
                 ))}
               </ol>
             </>
@@ -503,7 +560,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
         </div>
 
         {/* QR Code Autentikasi Elektronik */}
-        {letter.verification.enabled && (
+        {safeVerification.enabled && (
           <div className="flex items-center gap-2 border border-slate-200 bg-slate-50/80 p-1.5 rounded text-[10px] text-slate-600">
             {qrDataUrl && (
               <img
@@ -515,7 +572,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
             <div className="text-left leading-tight">
               <span className="font-bold text-slate-800 block">Surat Sah Terverifikasi</span>
               <span className="font-mono text-[9px] text-slate-500 block">
-                {letter.verification.verificationCode}
+                {safeVerification.verificationCode || '-'}
               </span>
               <span className="text-[8.5px] text-emerald-800 block">
                 Sistem Administrasi Remasbara

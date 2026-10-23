@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Printer, Copy, Check, Edit3, X, ZoomIn, ZoomOut, RotateCcw, Send } from 'lucide-react';
 import { LetterDocument, OrganizationProfile } from '../types/letter';
 import { LetterPreviewA4 } from './LetterPreviewA4';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface LetterPreviewModalProps {
-  letter: LetterDocument | null;
+  letter: LetterDocument | null | undefined;
   orgProfile: OrganizationProfile;
   isOpen: boolean;
   onClose: () => void;
@@ -23,13 +24,19 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
 
+  const safeClose = useCallback(() => {
+    if (typeof onClose === 'function') {
+      onClose();
+    }
+  }, [onClose]);
+
   // Pasang listener keyboard keydown agar pengguna dapat menutup modal preview dengan menekan tombol 'Escape' (Esc)
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
-        onClose();
+        safeClose();
       }
     };
 
@@ -37,7 +44,7 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, safeClose]);
 
   if (!isOpen || !letter) return null;
 
@@ -46,24 +53,25 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
   };
 
   const handleCopyText = () => {
+    if (!letter) return;
     const lines = [
       `REMAJA MASJID BAITURRAHMAN`,
       `CIKUMPA MEKARJAYA SUKMAJAYA KOTA DEPOK`,
       `Jl. Tole Iskandar KM 3, Mekarjaya, Sukmajaya, Kota Depok`,
       `Hotline: 0896-4333-1415 | Surel: remasbaraofficial@gmail.com`,
       `--------------------------------------------------`,
-      `Nomor    : ${letter.letterNumber}`,
+      `Nomor    : ${letter.letterNumber || '-'}`,
       `Lampiran : ${letter.attachment || '-'}`,
-      `Perihal  : ${letter.subject}`,
-      `Tanggal  : ${letter.city}, ${letter.dateFormattedMasehi} (${letter.dateHijri})`,
+      `Perihal  : ${letter.subject || '-'}`,
+      `Tanggal  : ${letter.city || 'Depok'}, ${letter.dateFormattedMasehi || ''} (${letter.dateHijri || ''})`,
       ``,
       `Kepada Yth.`,
-      `${letter.recipientName}`,
-      `${letter.recipientInstitution}`,
+      `${letter.recipientName || 'Bapak/Ibu'}`,
+      `${letter.recipientInstitution || ''}`,
       ``,
-      `${letter.openingGreeting},`,
+      `${letter.openingGreeting || "Assalamu'alaikum Wr. Wb."},`,
       ``,
-      letter.openingParagraph,
+      letter.openingParagraph || '',
       ``,
     ];
 
@@ -76,28 +84,31 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
       lines.push(``);
     }
 
-    letter.contentParagraphs.forEach((p) => lines.push(p, ``));
+    const contentParas = Array.isArray(letter.contentParagraphs) ? letter.contentParagraphs : [];
+    contentParas.forEach((p) => lines.push(p || '', ``));
 
     lines.push(
-      letter.closingParagraph,
+      letter.closingParagraph || '',
       ``,
-      `${letter.closingGreeting},`,
+      `${letter.closingGreeting || "Wassalamu'alaikum Wr. Wb."},`,
       ``,
-      `${letter.signatories.firstSignatory.name} (${letter.signatories.firstSignatory.role})`,
-      `${letter.signatories.secondSignatory.name} (${letter.signatories.secondSignatory.role})`
+      `${letter.signatories?.firstSignatory?.name || 'Muhammad Faizal Addib'} (${letter.signatories?.firstSignatory?.role || 'Ketua Umum'})`,
+      `${letter.signatories?.secondSignatory?.name || 'Muhammad Akbar Izzati'} (${letter.signatories?.secondSignatory?.role || 'Sekretaris Umum'})`
     );
 
-    if (letter.signatories.kemasjidanSignatory?.enabled) {
-      lines.push(`Mengetahui: ${letter.signatories.kemasjidanSignatory.name} (${letter.signatories.kemasjidanSignatory.role})`);
+    if (letter.signatories?.kemasjidanSignatory?.enabled) {
+      lines.push(`Mengetahui: ${letter.signatories.kemasjidanSignatory.name || ''} (${letter.signatories.kemasjidanSignatory.role || ''})`);
     }
-    if (letter.signatories.yayasanSignatory?.enabled) {
-      lines.push(`Mengetahui: ${letter.signatories.yayasanSignatory.name} (${letter.signatories.yayasanSignatory.role})`);
+    if (letter.signatories?.yayasanSignatory?.enabled) {
+      lines.push(`Mengetahui: ${letter.signatories.yayasanSignatory.name || ''} (${letter.signatories.yayasanSignatory.role || ''})`);
     }
 
-    lines.push(
-      ``,
-      `Kode Verifikasi: ${letter.verification.verificationCode}`
-    );
+    if (letter.verification?.verificationCode) {
+      lines.push(
+        ``,
+        `Kode Verifikasi: ${letter.verification.verificationCode}`
+      );
+    }
 
     navigator.clipboard.writeText(lines.join('\n'));
     setCopied(true);
@@ -110,10 +121,10 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
       <header className="no-print h-14 bg-slate-900 border-b border-slate-800 text-white px-4 sm:px-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <span className="font-mono text-xs font-semibold text-emerald-400 bg-emerald-950/80 px-2 py-1 rounded border border-emerald-800/80">
-            {letter.letterNumber}
+            {letter.letterNumber || 'Draft'}
           </span>
           <span className="text-xs text-slate-300 hidden md:inline truncate max-w-sm">
-            {letter.subject}
+            {letter.subject || '(Tanpa Perihal)'}
           </span>
         </div>
 
@@ -162,7 +173,7 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
             <button
               type="button"
               onClick={() => {
-                onSend(letter);
+                if (typeof onSend === 'function') onSend(letter);
               }}
               className="px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg shadow-sm flex items-center gap-1.5 transition-colors ring-1 ring-emerald-400/50"
               title="Kirim Arsip Surat Resmi (via WhatsApp / Email)"
@@ -175,8 +186,10 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
           <button
             type="button"
             onClick={() => {
-              onEdit(letter);
-              onClose();
+              if (typeof onEdit === 'function') {
+                onEdit(letter);
+              }
+              safeClose();
             }}
             className="px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-lg flex items-center gap-1.5 transition-colors"
           >
@@ -195,7 +208,7 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={safeClose}
             className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg ml-2 flex items-center gap-1.5"
             title="Tutup Pratinjau (Tekan tombol Esc)"
           >
@@ -213,7 +226,9 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
           style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
           className="transition-transform duration-150 ease-out"
         >
-          <LetterPreviewA4 letter={letter} orgProfile={orgProfile} />
+          <ErrorBoundary fallbackTitle="Kendala Memuat Lembar Pratinjau Dokumen">
+            <LetterPreviewA4 letter={letter} orgProfile={orgProfile} />
+          </ErrorBoundary>
         </div>
       </div>
     </div>

@@ -48,7 +48,9 @@ export const SupabaseSyncModal: React.FC<SupabaseSyncModalProps> = ({
       runCheck();
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape' || e.key === 'Esc') {
-          onClose();
+          if (typeof onClose === 'function') {
+            onClose();
+          }
         }
       };
       window.addEventListener('keydown', handleKeyDown);

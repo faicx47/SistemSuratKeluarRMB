@@ -33,7 +33,9 @@ export const SignatureCanvasModal: React.FC<SignatureCanvasModalProps> = ({
 
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape' || e.key === 'Esc') {
-          onClose();
+          if (typeof onClose === 'function') {
+            onClose();
+          }
         }
       };
       window.addEventListener('keydown', handleKeyDown);

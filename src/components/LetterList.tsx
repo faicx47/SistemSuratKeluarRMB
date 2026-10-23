@@ -333,19 +333,19 @@ export const LetterList: React.FC<LetterListProps> = ({
               ) : (
                 filteredLetters.map((letter) => {
                   const hasSigChairman =
-                    letter.signatories.firstSignatory.includeSignature &&
-                    Boolean(letter.signatories.firstSignatory.signatureDataUrl);
+                    Boolean(letter.signatories?.firstSignatory?.includeSignature &&
+                    letter.signatories?.firstSignatory?.signatureDataUrl);
                   const hasSigSecretary =
-                    letter.signatories.secondSignatory.includeSignature &&
-                    Boolean(letter.signatories.secondSignatory.signatureDataUrl);
+                    Boolean(letter.signatories?.secondSignatory?.includeSignature &&
+                    letter.signatories?.secondSignatory?.signatureDataUrl);
                   const hasSigKemasjidan =
-                    !letter.signatories.kemasjidanSignatory?.enabled ||
-                    (letter.signatories.kemasjidanSignatory.includeSignature &&
-                      Boolean(letter.signatories.kemasjidanSignatory.signatureDataUrl));
+                    !letter.signatories?.kemasjidanSignatory?.enabled ||
+                    Boolean(letter.signatories?.kemasjidanSignatory?.includeSignature &&
+                      letter.signatories?.kemasjidanSignatory?.signatureDataUrl);
                   const hasSigYayasan =
-                    !letter.signatories.yayasanSignatory?.enabled ||
-                    (letter.signatories.yayasanSignatory.includeSignature &&
-                      Boolean(letter.signatories.yayasanSignatory.signatureDataUrl));
+                    !letter.signatories?.yayasanSignatory?.enabled ||
+                    Boolean(letter.signatories?.yayasanSignatory?.includeSignature &&
+                      letter.signatories?.yayasanSignatory?.signatureDataUrl);
                   const isAllSigned =
                     hasSigChairman && hasSigSecretary && hasSigKemasjidan && hasSigYayasan;
                   const isPartiallySigned =

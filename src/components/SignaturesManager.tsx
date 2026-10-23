@@ -56,7 +56,7 @@ export const SignaturesManager: React.FC<SignaturesManagerProps> = ({
       if (e.key === 'Escape' || e.key === 'Esc') {
         if (editingSig) {
           setEditingSig(null);
-        } else {
+        } else if (typeof onClose === 'function') {
           onClose();
         }
       }
