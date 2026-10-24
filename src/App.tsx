@@ -217,6 +217,16 @@ export default function App() {
     SupabaseService.saveOrgProfile(profile).catch(() => {});
   };
 
+  const handleOrgSaved = (saved?: OrganizationProfile) => {
+    if (saved) {
+      setOrgProfile(saved);
+      StorageService.saveOrgProfile(saved);
+      showToast('Profil organisasi & logo berhasil disimpan!');
+    } else {
+      refreshOrgProfile();
+    }
+  };
+
   const handleStartCreate = async () => {
     try {
       const nextSeq = await SupabaseService.getNextLetterSequence();
@@ -510,7 +520,7 @@ export default function App() {
       <OrgSettingsModal
         isOpen={isOrgSettingsOpen}
         onClose={() => setIsOrgSettingsOpen(false)}
-        onSaved={refreshOrgProfile}
+        onSaved={handleOrgSaved}
       />
 
       <SupabaseSyncModal

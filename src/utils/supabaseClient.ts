@@ -377,55 +377,60 @@ export const SupabaseService = {
    * Kompatibel dengan skema tabel Supabase yang ada (org_name, mosque_name, emblem_url, dsb)
    * maupun skema berbasis profile_data jsonb
    */
+  /**
+   * Save organization profile to Supabase
+   * Menargetkan single record ID ('default' atau baris pertama) secara konsisten
+   * tanpa membuat baris ganda, dan menyertakan logoUrl / emblem_url terbaru.
+   */
   async saveOrgProfile(profile: OrganizationProfile): Promise<boolean> {
     try {
-      // Ambil id baris yang sudah ada agar tidak membuat duplikasi baris
-      const { data: existing } = await supabase
+      // 1. Ambil id record tunggal yang ada
+      const { data: existingRows } = await supabase
         .from('org_profile')
         .select('id')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
 
-      const targetId = existing?.id || 'default';
+      const targetId = existingRows && existingRows.length > 0 && existingRows[0]?.id
+        ? existingRows[0].id
+        : 'default';
 
+      // 2. Siapkan payload yang bersih dengan kolom yang pasti ada di tabel database
       const payload: any = {
         id: targetId,
-        org_name: profile.name,
-        mosque_name: profile.mosqueName,
-        address: profile.address,
-        city: profile.city,
-        contact_number: profile.phone,
+        org_name: profile.name || 'REMAJA MASJID BAITURRAHMAN',
+        mosque_name: profile.mosqueName || 'MASJID BAITURRAHMAN',
+        address: profile.address || 'Jl. Tole Iskandar KM 3, RT 02 / RW 07',
+        city: profile.city || 'Kota Depok',
+        contact_number: profile.phone || '0896-4333-1415',
         emblem_url: profile.logoUrl || null,
         stamp_url: profile.defaultStampUrl || null,
-        profile_data: sanitizePayload(profile),
         updated_at: new Date().toISOString(),
       };
 
-      // Coba simpan ke target id
-      let { error } = await supabase.from('org_profile').upsert(payload, { onConflict: 'id' });
+      // 3. Eksekusi update langsung ke targetId tunggal
+      const { error: updateError, data: updateData } = await supabase
+        .from('org_profile')
+        .update(payload)
+        .eq('id', targetId)
+        .select();
 
-      if (error) {
-        console.warn('Supabase saveOrgProfile error on id:', error.message);
-        // Jika error karena kolom profile_data tidak ada di skema lama, hapus dan ulangi
-        if (error.message.includes('profile_data')) {
-          delete payload.profile_data;
-          const retry = await supabase.from('org_profile').upsert(payload, { onConflict: 'id' });
-          error = retry.error;
-        }
-
-        if (error) {
-          // Fallback update pada baris pertama yang ada
-          const { error: updErr } = await supabase
-            .from('org_profile')
-            .update(payload)
-            .eq('id', targetId);
-          if (updErr) {
-            console.warn('Supabase fallback update org_profile error:', updErr.message);
-            return false;
-          }
+      // 4. Jika baris belum ada di tabel, lakukan upsert
+      if (updateError || !updateData || updateData.length === 0) {
+        const { error: upsertError } = await supabase
+          .from('org_profile')
+          .upsert(payload, { onConflict: 'id' });
+        if (upsertError) {
+          console.warn('Supabase saveOrgProfile upsert error:', upsertError.message);
+          return false;
         }
       }
+
+      // 5. Perbarui cache lokal seketika dengan profile terbaru
+      try {
+        localStorage.setItem('remasbara_org_profile_v1', JSON.stringify(profile));
+        window.dispatchEvent(new CustomEvent('org-profile-updated', { detail: profile }));
+      } catch {}
+
       return true;
     } catch (e) {
       console.warn('Supabase saveOrgProfile exception:', e);
@@ -438,11 +443,11 @@ export const SupabaseService = {
    */
   async saveOrgLogo(logoDataUrl?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const profile = (await this.fetchOrgProfile()) || {
+      const currentProfile = (await this.fetchOrgProfile()) || {
         name: 'REMAJA MASJID BAITURRAHMAN',
         subName: 'DEPARTEMEN DAKWAH & KEPEMUDAAN',
         mosqueName: 'MASJID BAITURRAHMAN',
-        address: 'Jl. Toleiskandar KM 3, Mekarjaya, Sukmajaya',
+        address: 'Jl. Tole Iskandar KM 3, RT 02 / RW 07',
         kelurahan: 'Mekarjaya',
         kecamatan: 'Sukmajaya',
         city: 'Kota Depok',
@@ -453,17 +458,15 @@ export const SupabaseService = {
         instagram: '@remasbara_official',
         codeIdentifier: 'RMB',
       };
+      const updatedProfile: OrganizationProfile = {
+        ...currentProfile,
+        logoUrl: logoDataUrl || undefined,
+      };
 
-      profile.logoUrl = logoDataUrl || undefined;
-      const saved = await this.saveOrgProfile(profile);
+      const saved = await this.saveOrgProfile(updatedProfile);
       if (!saved) {
-        return { success: false, error: 'Gagal menyimpan logo ke database Supabase' };
+        return { success: false, error: 'Gagal memperbarui logo di database Supabase' };
       }
-
-      try {
-        localStorage.setItem('remasbara_org_profile_v1', JSON.stringify(profile));
-        window.dispatchEvent(new CustomEvent('org-profile-updated', { detail: profile }));
-      } catch {}
 
       return { success: true };
     } catch (err: any) {
@@ -481,7 +484,6 @@ export const SupabaseService = {
       const { data, error } = await supabase
         .from('org_profile')
         .select('*')
-        .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -490,45 +492,26 @@ export const SupabaseService = {
         return null;
       }
 
-      let profile: OrganizationProfile;
-
-      // Jika ada field profile_data (jsonb)
-      if (data.profile_data) {
-        const parsed = typeof data.profile_data === 'string'
-          ? JSON.parse(data.profile_data)
-          : data.profile_data;
-        profile = parsed as OrganizationProfile;
-      } else {
-        // Mapping dari kolom tabel Supabase
-        profile = {
-          name: data.org_name || 'REMAJA MASJID BAITURRAHMAN',
-          subName: 'DEPARTEMEN DAKWAH & KEPEMUDAAN',
-          mosqueName: data.mosque_name || 'MASJID BAITURRAHMAN',
-          address: data.address || 'Jl. Toleiskandar KM 3, Mekarjaya, Sukmajaya',
-          kelurahan: 'Mekarjaya',
-          kecamatan: 'Sukmajaya',
-          city: data.city || 'Kota Depok',
-          province: 'Jawa Barat',
-          postalCode: '16411',
-          phone: data.contact_number || '0896-4333-1415',
-          email: 'remasbaraofficial@gmail.com',
-          instagram: '@remasbara_official',
-          codeIdentifier: 'RMB',
-          logoUrl: data.emblem_url || data.logo_url || undefined,
-          defaultStampUrl: data.stamp_url || undefined,
-          defaultKemasjidanStampUrl: undefined,
-          defaultYayasanStampUrl: undefined,
-        };
-      }
-
-      // Pastikan data emblem_url dan stamp_url dari kolom tabel dipetakan dengan tepat
-      const cloudLogo = data.emblem_url || data.logo_url;
-      if (cloudLogo) {
-        profile.logoUrl = cloudLogo;
-      }
-      if (data.stamp_url) {
-        profile.defaultStampUrl = data.stamp_url;
-      }
+      // Mapping dari kolom tabel Supabase
+      const profile: OrganizationProfile = {
+        name: data.org_name || 'REMAJA MASJID BAITURRAHMAN',
+        subName: 'DEPARTEMEN DAKWAH & KEPEMUDAAN',
+        mosqueName: data.mosque_name || 'MASJID BAITURRAHMAN',
+        address: data.address || 'Jl. Tole Iskandar KM 3, RT 02 / RW 07',
+        kelurahan: 'Mekarjaya',
+        kecamatan: 'Sukmajaya',
+        city: data.city || 'Kota Depok',
+        province: 'Jawa Barat',
+        postalCode: '16411',
+        phone: data.contact_number || '0896-4333-1415',
+        email: 'remasbaraofficial@gmail.com',
+        instagram: '@remasbara_official',
+        codeIdentifier: 'RMB',
+        logoUrl: data.emblem_url || data.logo_url || undefined,
+        defaultStampUrl: data.stamp_url || undefined,
+        defaultKemasjidanStampUrl: undefined,
+        defaultYayasanStampUrl: undefined,
+      };
 
       return profile;
     } catch (e) {

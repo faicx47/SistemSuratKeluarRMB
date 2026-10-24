@@ -24,7 +24,7 @@ import { RemasbaraLogo, RemasbaraOfficialStamp } from './RemasbaraVisuals';
 interface OrgSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved?: (savedProfile?: OrganizationProfile) => void;
 }
 
 export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
@@ -41,6 +41,11 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stampInputRef = useRef<HTMLInputElement>(null);
 
+  // Refs untuk menjamin nilai berkas gambar logo dan stempel terbaru selalu tersedia saat submit
+  const currentLogoRef = useRef<string | undefined>(profile.logoUrl);
+  const currentStampRef = useRef<string | undefined>(profile.defaultStampUrl);
+  const hasUserUploadedInSession = useRef<boolean>(false);
+
   const notifySync = (msg: string) => {
     setSyncNotice(msg);
     setTimeout(() => setSyncNotice(null), 4000);
@@ -48,7 +53,10 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
 
   // Fetch directly from Supabase table on open to ensure latest cloud profile is displayed
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      hasUserUploadedInSession.current = false;
+      return;
+    }
     let isMounted = true;
     setIsLoadingProfile(true);
 
@@ -56,8 +64,13 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
       try {
         const remote = await SupabaseService.fetchOrgProfile();
         if (remote && isMounted) {
-          setProfile(remote);
-          StorageService.saveOrgProfile(remote);
+          // Hanya sinkronkan remote jika pengguna belum mengunggah gambar baru di sesi modal ini
+          if (!hasUserUploadedInSession.current) {
+            setProfile(remote);
+            currentLogoRef.current = remote.logoUrl;
+            currentStampRef.current = remote.defaultStampUrl;
+            StorageService.saveOrgProfile(remote);
+          }
         }
       } catch (e) {
         console.warn('Gagal memuat profil organisasi dari Supabase:', e);
@@ -91,17 +104,19 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
     if (!file) return;
 
     setIsUploadingLogo(true);
+    hasUserUploadedInSession.current = true;
     try {
       const dataUrl = await processLogoImageFile(file);
       if (!dataUrl) throw new Error('Gagal mengonversi berkas logo');
 
-      // Update state secara responsif
+      // 1. Langsung update ref dan state form organisasi
+      currentLogoRef.current = dataUrl;
       setProfile((prev) => ({ ...prev, logoUrl: dataUrl }));
 
-      // Simpan langsung ke Supabase
+      // 2. Simpan langsung ke Supabase (tabel org_profile kolom emblem_url)
       const res = await SupabaseService.saveOrgLogo(dataUrl);
       if (res.success) {
-        notifySync('✓ Logo berhasil diunggah & tersimpan ke Cloud Supabase! Sinkron di semua PC.');
+        notifySync('✓ Logo baru berhasil disimpan ke Cloud Supabase!');
       } else {
         notifySync('⚠ ' + (res.error || 'Gagal menyimpan logo ke Supabase'));
       }
@@ -116,7 +131,9 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
 
   const handleResetToDefaultLogo = async () => {
     setIsUploadingLogo(true);
+    hasUserUploadedInSession.current = true;
     try {
+      currentLogoRef.current = undefined;
       setProfile((prev) => ({ ...prev, logoUrl: undefined }));
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -133,15 +150,17 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
     if (!file) return;
 
     setIsUploadingStamp(true);
+    hasUserUploadedInSession.current = true;
     try {
       const dataUrl = await processStampImageFile(file);
       if (!dataUrl) throw new Error('Gagal memproses berkas stempel');
 
+      currentStampRef.current = dataUrl;
       setProfile((prev) => ({ ...prev, defaultStampUrl: dataUrl }));
 
       const res = await SupabaseService.saveActiveCustomStamp('remasbara', dataUrl);
       if (res.success) {
-        notifySync('✓ Sampel stempel berhasil disimpan ke Cloud Supabase! Sinkron di semua PC.');
+        notifySync('✓ Sampel stempel berhasil disimpan ke Cloud Supabase!');
       } else {
         notifySync('⚠ ' + (res.error || 'Gagal menyimpan stempel ke Supabase'));
       }
@@ -156,7 +175,9 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
 
   const handleResetToDefaultStamp = async () => {
     setIsUploadingStamp(true);
+    hasUserUploadedInSession.current = true;
     try {
+      currentStampRef.current = undefined;
       setProfile((prev) => ({ ...prev, defaultStampUrl: undefined }));
       if (stampInputRef.current) {
         stampInputRef.current.value = '';
@@ -172,16 +193,41 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
     e.preventDefault();
     setIsSaving(true);
     try {
-      StorageService.saveOrgProfile(profile);
-      await SupabaseService.saveOrgProfile(profile);
+      // Pastikan payload Supabase benar-benar menyertakan nilai gambar logo dan stempel terbaru
+      const profileToSave: OrganizationProfile = {
+        ...profile,
+        logoUrl: currentLogoRef.current,
+        defaultStampUrl: currentStampRef.current,
+      };
+
+      // Simpan langsung ke Supabase menargetkan baris tunggal konsisten
+      const saved = await SupabaseService.saveOrgProfile(profileToSave);
+      if (!saved) {
+        console.warn('Gagal menyimpan profil ke Supabase saat submit');
+      }
+
+      // Perbarui state form dan storage tanpa me-reset ke nilai lama
+      StorageService.saveOrgProfile(profileToSave);
+      setProfile(profileToSave);
+
       try {
-        window.dispatchEvent(new CustomEvent('org-profile-updated', { detail: profile }));
+        window.dispatchEvent(new CustomEvent('org-profile-updated', { detail: profileToSave }));
       } catch {}
-      onSaved();
+
+      if (typeof onSaved === 'function') {
+        onSaved(profileToSave);
+      }
       onClose();
     } catch (err: any) {
       console.error('Gagal simpan profil ke Supabase:', err);
-      onSaved();
+      const fallbackProfile: OrganizationProfile = {
+        ...profile,
+        logoUrl: currentLogoRef.current,
+        defaultStampUrl: currentStampRef.current,
+      };
+      if (typeof onSaved === 'function') {
+        onSaved(fallbackProfile);
+      }
       onClose();
     } finally {
       setIsSaving(false);
