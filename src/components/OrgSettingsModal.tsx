@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Building2,
   Save,
@@ -12,10 +12,13 @@ import {
   ImageIcon,
   CheckCircle2,
   Award,
+  Loader2,
+  Cloud,
 } from 'lucide-react';
 import { OrganizationProfile } from '../types/letter';
 import { StorageService } from '../utils/storage';
 import { SupabaseService } from '../utils/supabaseClient';
+import { processLogoImageFile, processStampImageFile } from '../utils/stampImageHelper';
 import { RemasbaraLogo, RemasbaraOfficialStamp } from './RemasbaraVisuals';
 
 interface OrgSettingsModalProps {
@@ -30,13 +33,21 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
   onSaved,
 }) => {
   const [profile, setProfile] = useState<OrganizationProfile>(StorageService.getOrgProfile());
-  const [isLoadingProfile, setIsLoadingProfile] = useState<boolean>(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState<boolean>(false);
+  const [isUploadingStamp, setIsUploadingStamp] = useState<boolean>(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stampInputRef = useRef<HTMLInputElement>(null);
 
+  const notifySync = (msg: string) => {
+    setSyncNotice(msg);
+    setTimeout(() => setSyncNotice(null), 4000);
+  };
+
   // Fetch directly from Supabase table on open to ensure latest cloud profile is displayed
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) return;
     let isMounted = true;
     setIsLoadingProfile(true);
@@ -75,45 +86,85 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setProfile((prev) => ({ ...prev, logoUrl: dataUrl }));
-      }
-    };
-    reader.readAsDataURL(file);
-  };
+    setIsUploadingLogo(true);
+    try {
+      const dataUrl = await processLogoImageFile(file);
+      if (!dataUrl) throw new Error('Gagal mengonversi berkas logo');
 
-  const handleResetToDefaultLogo = () => {
-    setProfile((prev) => ({ ...prev, logoUrl: undefined }));
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      // Update state secara responsif
+      setProfile((prev) => ({ ...prev, logoUrl: dataUrl }));
+
+      // Simpan langsung ke Supabase
+      const res = await SupabaseService.saveOrgLogo(dataUrl);
+      if (res.success) {
+        notifySync('✓ Logo berhasil diunggah & tersimpan ke Cloud Supabase! Sinkron di semua PC.');
+      } else {
+        notifySync('⚠ ' + (res.error || 'Gagal menyimpan logo ke Supabase'));
+      }
+    } catch (err: any) {
+      console.error('Logo upload error:', err);
+      alert('Gagal memproses gambar logo: ' + (err?.message || err));
+    } finally {
+      setIsUploadingLogo(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleStampUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleResetToDefaultLogo = async () => {
+    setIsUploadingLogo(true);
+    try {
+      setProfile((prev) => ({ ...prev, logoUrl: undefined }));
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      await SupabaseService.saveOrgLogo(undefined);
+      notifySync('✓ Menggunakan Logo Vektor Resmi Remasbara.');
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const handleStampUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setProfile((prev) => ({ ...prev, defaultStampUrl: dataUrl }));
+    setIsUploadingStamp(true);
+    try {
+      const dataUrl = await processStampImageFile(file);
+      if (!dataUrl) throw new Error('Gagal memproses berkas stempel');
+
+      setProfile((prev) => ({ ...prev, defaultStampUrl: dataUrl }));
+
+      const res = await SupabaseService.saveActiveCustomStamp('remasbara', dataUrl);
+      if (res.success) {
+        notifySync('✓ Sampel stempel berhasil disimpan ke Cloud Supabase! Sinkron di semua PC.');
+      } else {
+        notifySync('⚠ ' + (res.error || 'Gagal menyimpan stempel ke Supabase'));
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      console.error('Stamp upload error:', err);
+      alert('Gagal memproses gambar stempel: ' + (err?.message || err));
+    } finally {
+      setIsUploadingStamp(false);
+      if (stampInputRef.current) stampInputRef.current.value = '';
+    }
   };
 
-  const handleResetToDefaultStamp = () => {
-    setProfile((prev) => ({ ...prev, defaultStampUrl: undefined }));
-    if (stampInputRef.current) {
-      stampInputRef.current.value = '';
+  const handleResetToDefaultStamp = async () => {
+    setIsUploadingStamp(true);
+    try {
+      setProfile((prev) => ({ ...prev, defaultStampUrl: undefined }));
+      if (stampInputRef.current) {
+        stampInputRef.current.value = '';
+      }
+      await SupabaseService.resetActiveCustomStamp('remasbara');
+      notifySync('✓ Kembali menggunakan Stempel Vektor Resmi.');
+    } finally {
+      setIsUploadingStamp(false);
     }
   };
 
@@ -123,6 +174,9 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
     try {
       StorageService.saveOrgProfile(profile);
       await SupabaseService.saveOrgProfile(profile);
+      try {
+        window.dispatchEvent(new CustomEvent('org-profile-updated', { detail: profile }));
+      } catch {}
       onSaved();
       onClose();
     } catch (err: any) {
@@ -157,15 +211,39 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto max-h-[75vh]">
+          {/* Cloud Sync Notice Banner */}
+          {syncNotice && (
+            <div className="bg-emerald-600 text-white rounded-xl p-3 text-xs font-semibold flex items-center justify-between shadow-md animate-fadeIn">
+              <span className="flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-emerald-200" />
+                {syncNotice}
+              </span>
+              <span className="text-[10px] bg-emerald-700 px-2 py-0.5 rounded font-mono">
+                SUPABASE ✓
+              </span>
+            </div>
+          )}
+
           {/* Logo Section */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-            <label className="block text-xs font-bold text-slate-800 mb-2 flex items-center gap-1.5">
-              <ImageIcon className="w-4 h-4 text-emerald-700" />
-              Logo Organisasi (Kop Surat & Header)
+            <label className="block text-xs font-bold text-slate-800 mb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <ImageIcon className="w-4 h-4 text-emerald-700" />
+                Logo Organisasi (Kop Surat & Header)
+              </span>
+              <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <Cloud className="w-3 h-3 text-emerald-700" />
+                Sinkron Cloud
+              </span>
             </label>
             <div className="flex flex-col sm:flex-row items-center gap-4">
-              <div className="w-20 h-20 bg-white border border-slate-200 rounded-lg p-1.5 flex items-center justify-center shadow-xs shrink-0">
-                {profile.logoUrl ? (
+              <div className="w-20 h-20 bg-white border border-slate-200 rounded-lg p-1.5 flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
+                {isLoadingProfile ? (
+                  <div className="flex flex-col items-center justify-center gap-1 text-slate-400">
+                    <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+                    <span className="text-[9px] font-medium">Cloud...</span>
+                  </div>
+                ) : profile.logoUrl ? (
                   <img
                     src={profile.logoUrl}
                     alt="Logo Pratinjau"
@@ -179,12 +257,16 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
               <div className="flex-1 space-y-2 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-1.5">
                   <span className="text-xs font-semibold text-slate-800">
-                    {profile.logoUrl ? 'Logo Kustom Aktif' : 'Logo Vektor Resmi Remasbara'}
+                    {isLoadingProfile
+                      ? 'Memuat data logo...'
+                      : profile.logoUrl
+                      ? 'Logo Kustom Aktif (Cloud Supabase)'
+                      : 'Logo Vektor Resmi Remasbara'}
                   </span>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  {!isLoadingProfile && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
                 </div>
                 <p className="text-[11px] text-slate-500 leading-snug">
-                  Format disarankan: PNG transparan, SVG, atau JPG. Logo ini akan dicetak otomatis di Kop Surat A4.
+                  Format disarankan: PNG transparan, SVG, atau JPG. Logo ini otomatis disinkronkan ke Supabase dan dicetak di Kop Surat A4 pada semua PC.
                 </p>
 
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
@@ -198,16 +280,27 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
                   />
                   <button
                     type="button"
+                    disabled={isUploadingLogo || isLoadingProfile}
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
                   >
-                    <Upload className="w-3.5 h-3.5" />
-                    Unggah Logo Gambar
+                    {isUploadingLogo ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Menyimpan ke Cloud...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        Unggah Logo Gambar
+                      </>
+                    )}
                   </button>
 
-                  {profile.logoUrl && (
+                  {!isLoadingProfile && profile.logoUrl && (
                     <button
                       type="button"
+                      disabled={isUploadingLogo}
                       onClick={handleResetToDefaultLogo}
                       className="px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1.5"
                     >
@@ -222,13 +315,24 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
 
           {/* Master Stempel Section */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-            <label className="block text-xs font-bold text-slate-800 mb-2 flex items-center gap-1.5">
-              <Award className="w-4 h-4 text-emerald-700" />
-              Sampel Stempel Resmi Organisasi (Default)
+            <label className="block text-xs font-bold text-slate-800 mb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Award className="w-4 h-4 text-emerald-700" />
+                Sampel Stempel Resmi Organisasi (Default)
+              </span>
+              <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <Cloud className="w-3 h-3 text-emerald-700" />
+                Sinkron Cloud
+              </span>
             </label>
             <div className="flex flex-col sm:flex-row items-center gap-4">
-              <div className="w-20 h-20 bg-white border border-slate-200 rounded-lg p-1.5 flex items-center justify-center shadow-xs shrink-0">
-                {profile.defaultStampUrl ? (
+              <div className="w-20 h-20 bg-white border border-slate-200 rounded-lg p-1.5 flex items-center justify-center shadow-xs shrink-0 overflow-hidden">
+                {isLoadingProfile ? (
+                  <div className="flex flex-col items-center justify-center gap-1 text-slate-400">
+                    <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+                    <span className="text-[9px] font-medium">Cloud...</span>
+                  </div>
+                ) : profile.defaultStampUrl ? (
                   <img
                     src={profile.defaultStampUrl}
                     alt="Sampel Stempel Default"
@@ -242,12 +346,16 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
               <div className="flex-1 space-y-2 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-1.5">
                   <span className="text-xs font-semibold text-slate-800">
-                    {profile.defaultStampUrl ? 'Sampel Stempel Kustom Aktif' : 'Stempel Vektor Resmi Remasbara'}
+                    {isLoadingProfile
+                      ? 'Memuat data stempel...'
+                      : profile.defaultStampUrl
+                      ? 'Sampel Stempel Kustom Aktif (Cloud Supabase)'
+                      : 'Stempel Vektor Resmi Remasbara'}
                   </span>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  {!isLoadingProfile && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
                 </div>
                 <p className="text-[11px] text-slate-500 leading-snug">
-                  Unggah berkas sampel stempel cap basah (PNG transparan/JPG) untuk dipakai otomatis di sebelah kiri tanda tangan.
+                  Unggah berkas sampel stempel cap basah (PNG transparan/JPG) untuk disimpan permanen di database Supabase dan dipakai otomatis di sebelah kiri tanda tangan.
                 </p>
 
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
@@ -261,16 +369,27 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
                   />
                   <button
                     type="button"
+                    disabled={isUploadingStamp || isLoadingProfile}
                     onClick={() => stampInputRef.current?.click()}
-                    className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
                   >
-                    <Upload className="w-3.5 h-3.5" />
-                    Unggah Sampel Stempel
+                    {isUploadingStamp ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Menyimpan ke Cloud...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        Unggah Sampel Stempel
+                      </>
+                    )}
                   </button>
 
-                  {profile.defaultStampUrl && (
+                  {!isLoadingProfile && profile.defaultStampUrl && (
                     <button
                       type="button"
+                      disabled={isUploadingStamp}
                       onClick={handleResetToDefaultStamp}
                       className="px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1.5"
                     >

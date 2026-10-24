@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   Upload,
@@ -10,6 +10,8 @@ import {
   Layers,
   Trash2,
   Plus,
+  Loader2,
+  Cloud,
 } from 'lucide-react';
 import { SavedStamp } from '../types/letter';
 import { StorageService } from '../utils/storage';
@@ -42,13 +44,16 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
   const [stamps, setStamps] = useState<SavedStamp[]>(StorageService.getStamps());
   const [selectedStampId, setSelectedStampId] = useState<string>('stamp-remasbara');
   const [savedFeedback, setSavedFeedback] = useState(false);
+  const [isLoadingStamps, setIsLoadingStamps] = useState<boolean>(true);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initial fetch directly from Supabase stamps table on modal open
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) return;
     let isMounted = true;
+    setIsLoadingStamps(true);
 
     const loadRemoteStamps = async () => {
       try {
@@ -59,6 +64,10 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
         }
       } catch (e) {
         console.warn('Gagal memuat stempel dari Supabase:', e);
+      } finally {
+        if (isMounted) {
+          setIsLoadingStamps(false);
+        }
       }
     };
 
@@ -134,20 +143,47 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsUploading(true);
     try {
       const dataUrl = await processStampImageFile(file);
       if (dataUrl) {
         handleUpdateActiveStamp({ imageUrl: dataUrl });
+
+        // Jika stempel resmi utama, sinkronkan juga lewat saveActiveCustomStamp ke Supabase
+        if (activeStamp?.id === 'stamp-remasbara') {
+          await SupabaseService.saveActiveCustomStamp('remasbara', dataUrl, {
+            color: activeStamp.color,
+            opacity: activeStamp.opacity,
+          });
+        } else if (activeStamp?.id === 'stamp-kemasjidan') {
+          await SupabaseService.saveActiveCustomStamp('kemasjidan', dataUrl, {
+            color: activeStamp.color,
+            opacity: activeStamp.opacity,
+          });
+        } else if (activeStamp?.id === 'stamp-yayasan') {
+          await SupabaseService.saveActiveCustomStamp('yayasan', dataUrl, {
+            color: activeStamp.color,
+            opacity: activeStamp.opacity,
+          });
+        }
       }
     } catch (err: any) {
       alert('Gagal memproses gambar stempel: ' + (err?.message || err));
     } finally {
+      setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleResetToVector = () => {
+  const handleResetToVector = async () => {
     handleUpdateActiveStamp({ imageUrl: undefined });
+    if (activeStamp?.id === 'stamp-remasbara') {
+      await SupabaseService.resetActiveCustomStamp('remasbara');
+    } else if (activeStamp?.id === 'stamp-kemasjidan') {
+      await SupabaseService.resetActiveCustomStamp('kemasjidan');
+    } else if (activeStamp?.id === 'stamp-yayasan') {
+      await SupabaseService.resetActiveCustomStamp('yayasan');
+    }
   };
 
   const handleAddNewCustomStamp = () => {
@@ -292,13 +328,23 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
               {/* Visual Preview Box */}
               <div className="md:col-span-5 flex flex-col items-center">
-                <div className="w-full h-60 border-2 border-dashed border-slate-300 rounded-2xl bg-radial from-slate-50 to-slate-100 flex items-center justify-center p-4 relative shadow-inner">
-                  {renderStampPreview(activeStamp)}
+                <div className="w-full h-60 border-2 border-dashed border-slate-300 rounded-2xl bg-radial from-slate-50 to-slate-100 flex items-center justify-center p-4 relative shadow-inner overflow-hidden">
+                  {isLoadingStamps ? (
+                    <div className="flex flex-col items-center justify-center gap-2 text-slate-400">
+                      <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+                      <span className="text-xs font-medium text-slate-600">Menyelaraskan Cloud Supabase...</span>
+                    </div>
+                  ) : (
+                    <>
+                      {renderStampPreview(activeStamp)}
 
-                  {activeStamp.imageUrl && (
-                    <span className="absolute bottom-2 left-2 text-[10px] bg-black/60 text-white px-2 py-0.5 rounded font-medium">
-                      Sampel Berkas Unggahan
-                    </span>
+                      {activeStamp.imageUrl && (
+                        <span className="absolute bottom-2 left-2 text-[10px] bg-black/60 text-white px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                          <Cloud className="w-3 h-3 text-emerald-400" />
+                          Sampel Cloud Supabase
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -313,16 +359,27 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
 
                   <button
                     type="button"
+                    disabled={isUploading || isLoadingStamps}
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex-1 px-3 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                    className="flex-1 px-3 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-60 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm"
                   >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>{activeStamp.imageUrl ? 'Ganti Sampel' : 'Unggah Sampel Cap'}</span>
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Menyimpan ke Cloud...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{activeStamp.imageUrl ? 'Ganti Sampel' : 'Unggah Sampel Cap'}</span>
+                      </>
+                    )}
                   </button>
 
-                  {activeStamp.imageUrl && (
+                  {!isLoadingStamps && activeStamp.imageUrl && (
                     <button
                       type="button"
+                      disabled={isUploading}
                       onClick={handleResetToVector}
                       className="px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl flex items-center gap-1 transition-colors"
                       title="Kembali ke Vektor Resmi"

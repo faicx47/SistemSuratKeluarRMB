@@ -379,8 +379,18 @@ export const SupabaseService = {
    */
   async saveOrgProfile(profile: OrganizationProfile): Promise<boolean> {
     try {
+      // Ambil id baris yang sudah ada agar tidak membuat duplikasi baris
+      const { data: existing } = await supabase
+        .from('org_profile')
+        .select('id')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const targetId = existing?.id || 'default';
+
       const payload: any = {
-        id: 'default',
+        id: targetId,
         org_name: profile.name,
         mosque_name: profile.mosqueName,
         address: profile.address,
@@ -392,11 +402,11 @@ export const SupabaseService = {
         updated_at: new Date().toISOString(),
       };
 
-      // Coba simpan ke id default terlebih dahulu
+      // Coba simpan ke target id
       let { error } = await supabase.from('org_profile').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.warn('Supabase saveOrgProfile error on default id:', error.message);
+        console.warn('Supabase saveOrgProfile error on id:', error.message);
         // Jika error karena kolom profile_data tidak ada di skema lama, hapus dan ulangi
         if (error.message.includes('profile_data')) {
           delete payload.profile_data;
@@ -409,7 +419,7 @@ export const SupabaseService = {
           const { error: updErr } = await supabase
             .from('org_profile')
             .update(payload)
-            .neq('id', '');
+            .eq('id', targetId);
           if (updErr) {
             console.warn('Supabase fallback update org_profile error:', updErr.message);
             return false;
@@ -424,14 +434,54 @@ export const SupabaseService = {
   },
 
   /**
+   * Simpan logo organisasi langsung ke Supabase
+   */
+  async saveOrgLogo(logoDataUrl?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const profile = (await this.fetchOrgProfile()) || {
+        name: 'REMAJA MASJID BAITURRAHMAN',
+        subName: 'DEPARTEMEN DAKWAH & KEPEMUDAAN',
+        mosqueName: 'MASJID BAITURRAHMAN',
+        address: 'Jl. Toleiskandar KM 3, Mekarjaya, Sukmajaya',
+        kelurahan: 'Mekarjaya',
+        kecamatan: 'Sukmajaya',
+        city: 'Kota Depok',
+        province: 'Jawa Barat',
+        postalCode: '16411',
+        phone: '0896-4333-1415',
+        email: 'remasbaraofficial@gmail.com',
+        instagram: '@remasbara_official',
+        codeIdentifier: 'RMB',
+      };
+
+      profile.logoUrl = logoDataUrl || undefined;
+      const saved = await this.saveOrgProfile(profile);
+      if (!saved) {
+        return { success: false, error: 'Gagal menyimpan logo ke database Supabase' };
+      }
+
+      try {
+        localStorage.setItem('remasbara_org_profile_v1', JSON.stringify(profile));
+        window.dispatchEvent(new CustomEvent('org-profile-updated', { detail: profile }));
+      } catch {}
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('saveOrgLogo error:', err);
+      return { success: false, error: err?.message || String(err) };
+    }
+  },
+
+  /**
    * Fetch organization profile from Supabase
-   * Mengambil data kop resmi dari Supabase dan memetakan kolom-kolomnya
+   * Mengambil data profil organisasi terbaru dari Supabase dan memetakan kolom-kolomnya
    */
   async fetchOrgProfile(): Promise<OrganizationProfile | null> {
     try {
       const { data, error } = await supabase
         .from('org_profile')
         .select('*')
+        .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -464,19 +514,20 @@ export const SupabaseService = {
           email: 'remasbaraofficial@gmail.com',
           instagram: '@remasbara_official',
           codeIdentifier: 'RMB',
-          logoUrl: data.emblem_url || undefined,
+          logoUrl: data.emblem_url || data.logo_url || undefined,
           defaultStampUrl: data.stamp_url || undefined,
           defaultKemasjidanStampUrl: undefined,
           defaultYayasanStampUrl: undefined,
         };
       }
 
-      // Pastikan stamp_url dari kolom tabel menimpa defaultStampUrl jika belum ada
-      if (data.stamp_url && !profile.defaultStampUrl) {
-        profile.defaultStampUrl = data.stamp_url;
+      // Pastikan data emblem_url dan stamp_url dari kolom tabel dipetakan dengan tepat
+      const cloudLogo = data.emblem_url || data.logo_url;
+      if (cloudLogo) {
+        profile.logoUrl = cloudLogo;
       }
-      if (data.emblem_url && !profile.logoUrl) {
-        profile.logoUrl = data.emblem_url;
+      if (data.stamp_url) {
+        profile.defaultStampUrl = data.stamp_url;
       }
 
       return profile;
@@ -678,19 +729,26 @@ export const SupabaseService = {
       const { data, error } = await supabase
         .from('stamps')
         .select('*')
-        .order('updated_at', { ascending: true });
+        .order('updated_at', { ascending: false });
 
       if (error || !data || data.length === 0) return null;
-      const stamps: SavedStamp[] = data.map((d: any) => ({
-        id: d.id,
-        category: d.category || 'custom',
-        title: d.title || 'Stempel',
-        organization: d.organization || '',
-        color: d.color || 'red',
-        opacity: d.opacity !== null && d.opacity !== undefined ? Number(d.opacity) : 0.92,
-        imageUrl: d.image_url || d.data_url || d.imageUrl || undefined,
-        updatedAt: d.updated_at || new Date().toISOString(),
-      }));
+      const seen = new Set<string>();
+      const stamps: SavedStamp[] = [];
+      for (const d of data) {
+        if (!seen.has(d.id)) {
+          seen.add(d.id);
+          stamps.push({
+            id: d.id,
+            category: d.category || 'custom',
+            title: d.title || 'Stempel',
+            organization: d.organization || '',
+            color: d.color || 'red',
+            opacity: d.opacity !== null && d.opacity !== undefined ? Number(d.opacity) : 0.92,
+            imageUrl: d.image_url || d.data_url || d.imageUrl || undefined,
+            updatedAt: d.updated_at || new Date().toISOString(),
+          });
+        }
+      }
       return stamps;
     } catch (e) {
       return null;

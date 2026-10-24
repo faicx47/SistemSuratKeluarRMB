@@ -11,9 +11,14 @@ import {
 interface LetterPreviewA4Props {
   letter: LetterDocument | null | undefined;
   orgProfile?: OrganizationProfile | null;
+  isLoadingAssets?: boolean;
 }
 
-export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgProfile }) => {
+export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({
+  letter,
+  orgProfile,
+  isLoadingAssets = false,
+}) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   // Fallback safely if letter is missing or malformed
@@ -102,7 +107,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
         <div className="flex items-center gap-4 border-b-[2.5px] border-slate-900 pb-2">
           {/* Logo Remasbara */}
           <div className="shrink-0 flex items-center justify-center">
-            {safeProfile.logoUrl ? (
+            {isLoadingAssets ? (
+              <div className="w-20 h-20 sm:w-[88px] sm:h-[88px] rounded-lg bg-slate-100 animate-pulse flex items-center justify-center border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-sans">Memuat...</span>
+              </div>
+            ) : safeProfile.logoUrl ? (
               <img
                 src={safeProfile.logoUrl}
                 alt={`Logo ${safeProfile.name || 'Remasbara'}`}
@@ -476,11 +485,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                             className="absolute -left-12 sm:-left-16 top-1 z-10 pointer-events-none"
                             style={{ transform: 'translateX(2cm)' }}
                           >
-                            {letter.kemasjidanStamp?.customStampUrl ? (
+                            {effectiveKemasjidanStampUrl ? (
                               <img
-                                src={letter.kemasjidanStamp.customStampUrl}
+                                src={effectiveKemasjidanStampUrl}
                                 alt="Stempel Bidang Kemasjidan"
-                                style={{ opacity: letter.kemasjidanStamp.opacity ?? 0.92 }}
+                                style={{ opacity: letter.kemasjidanStamp?.opacity ?? 0.92 }}
                                 className="w-[130px] h-[130px] object-contain transform -rotate-6 select-none"
                               />
                             ) : (
@@ -497,11 +506,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                             className="absolute -left-12 sm:-left-16 top-1 z-10 pointer-events-none"
                             style={{ transform: 'translateX(2cm)' }}
                           >
-                            {letter.yayasanStamp?.customStampUrl ? (
+                            {effectiveYayasanStampUrl ? (
                               <img
-                                src={letter.yayasanStamp.customStampUrl}
+                                src={effectiveYayasanStampUrl}
                                 alt="Stempel Yayasan"
-                                style={{ opacity: letter.yayasanStamp.opacity ?? 0.92 }}
+                                style={{ opacity: letter.yayasanStamp?.opacity ?? 0.92 }}
                                 className="w-[130px] h-[130px] object-contain transform -rotate-6 select-none"
                               />
                             ) : (

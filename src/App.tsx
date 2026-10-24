@@ -156,19 +156,38 @@ export default function App() {
       setLetters(StorageService.getLetters());
     };
 
-    const handleStampsUpdated = () => {
-      setOrgProfile(StorageService.getOrgProfile());
+    const handleOrgProfileUpdated = (e: any) => {
+      if (e?.detail) {
+        setOrgProfile(e.detail);
+      } else {
+        setOrgProfile(StorageService.getOrgProfile());
+      }
+    };
+
+    const handleStampsUpdated = async () => {
+      try {
+        const remote = await SupabaseService.fetchOrgProfile();
+        if (remote) {
+          setOrgProfile(remote);
+        } else {
+          setOrgProfile(StorageService.getOrgProfile());
+        }
+      } catch {
+        setOrgProfile(StorageService.getOrgProfile());
+      }
     };
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('signatures-updated', handleSignaturesUpdated);
     window.addEventListener('stamps-updated', handleStampsUpdated);
+    window.addEventListener('org-profile-updated', handleOrgProfileUpdated);
     return () => {
       isMounted = false;
       clearTimeout(safetyTimeout);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('signatures-updated', handleSignaturesUpdated);
       window.removeEventListener('stamps-updated', handleStampsUpdated);
+      window.removeEventListener('org-profile-updated', handleOrgProfileUpdated);
     };
   }, []);
 

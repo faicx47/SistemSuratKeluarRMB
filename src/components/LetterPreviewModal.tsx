@@ -3,6 +3,7 @@ import { Printer, Copy, Check, Edit3, X, ZoomIn, ZoomOut, RotateCcw, Send } from
 import { LetterDocument, OrganizationProfile } from '../types/letter';
 import { LetterPreviewA4 } from './LetterPreviewA4';
 import { ErrorBoundary } from './ErrorBoundary';
+import { SupabaseService } from '../utils/supabaseClient';
 
 interface LetterPreviewModalProps {
   letter: LetterDocument | null | undefined;
@@ -23,6 +24,8 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [cloudProfile, setCloudProfile] = useState<OrganizationProfile>(orgProfile);
+  const [isLoadingAssets, setIsLoadingAssets] = useState<boolean>(false);
 
   const safeClose = useCallback(() => {
     if (typeof onClose === 'function') {
@@ -30,9 +33,47 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
     }
   }, [onClose]);
 
-  // Pasang listener keyboard keydown agar pengguna dapat menutup modal preview dengan menekan tombol 'Escape' (Esc)
+  // Sync cloud assets from Supabase upon opening preview modal
   useEffect(() => {
     if (!isOpen) return;
+    let isMounted = true;
+    setCloudProfile(orgProfile);
+
+    const loadLatestAssets = async () => {
+      try {
+        setIsLoadingAssets(true);
+        const [remoteProfile, remoteStamps] = await Promise.all([
+          SupabaseService.fetchOrgProfile(),
+          SupabaseService.fetchStamps(),
+        ]);
+        if (!isMounted) return;
+
+        const effective: OrganizationProfile = remoteProfile || { ...orgProfile };
+        if (remoteStamps && remoteStamps.length > 0) {
+          const remasbaraStamp = remoteStamps.find((s) => s.id === 'stamp-remasbara' || s.category === 'remasbara');
+          const kemasjidanStamp = remoteStamps.find((s) => s.id === 'stamp-kemasjidan' || s.category === 'kemasjidan');
+          const yayasanStamp = remoteStamps.find((s) => s.id === 'stamp-yayasan' || s.category === 'yayasan');
+          if (remasbaraStamp?.imageUrl && !effective.defaultStampUrl) {
+            effective.defaultStampUrl = remasbaraStamp.imageUrl;
+          }
+          if (kemasjidanStamp?.imageUrl && !effective.defaultKemasjidanStampUrl) {
+            effective.defaultKemasjidanStampUrl = kemasjidanStamp.imageUrl;
+          }
+          if (yayasanStamp?.imageUrl && !effective.defaultYayasanStampUrl) {
+            effective.defaultYayasanStampUrl = yayasanStamp.imageUrl;
+          }
+        }
+        setCloudProfile(effective);
+      } catch (err) {
+        console.warn('Gagal memuat aset visual pratinjau:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingAssets(false);
+        }
+      }
+    };
+
+    loadLatestAssets();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
@@ -42,9 +83,10 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      isMounted = false;
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, safeClose]);
+  }, [isOpen, safeClose, orgProfile]);
 
   if (!isOpen || !letter) return null;
 
@@ -227,7 +269,11 @@ export const LetterPreviewModal: React.FC<LetterPreviewModalProps> = ({
           className="transition-transform duration-150 ease-out"
         >
           <ErrorBoundary fallbackTitle="Kendala Memuat Lembar Pratinjau Dokumen">
-            <LetterPreviewA4 letter={letter} orgProfile={orgProfile} />
+            <LetterPreviewA4
+              letter={letter}
+              orgProfile={cloudProfile}
+              isLoadingAssets={isLoadingAssets}
+            />
           </ErrorBoundary>
         </div>
       </div>

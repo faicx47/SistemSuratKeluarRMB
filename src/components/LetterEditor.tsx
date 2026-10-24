@@ -112,6 +112,7 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
   const [savedSignatures, setSavedSignatures] = useState<SavedSignature[]>(StorageService.getSignatures());
   const [uploadingStampTarget, setUploadingStampTarget] = useState<'remasbara' | 'kemasjidan' | 'yayasan' | null>(null);
   const [stampSyncToast, setStampSyncToast] = useState<string | null>(null);
+  const [isLoadingCloudStamps, setIsLoadingCloudStamps] = useState<boolean>(true);
 
   // Listen for storage & signatures-updated events (e.g. from other tabs or Master TTD modal)
   useEffect(() => {
@@ -205,6 +206,10 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
         });
       } catch (err) {
         console.warn('Gagal sinkronisasi stempel dari Supabase:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingCloudStamps(false);
+        }
       }
     };
 
@@ -2526,8 +2531,13 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                 <div className="pt-4 border-t border-slate-200 space-y-4">
                   {/* Pratinjau & Tombol Upload Sampel */}
                   <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-lg border border-slate-200">
-                    <div className="w-24 h-24 bg-slate-50 border border-dashed border-slate-300 rounded-lg flex items-center justify-center p-2 relative shrink-0">
-                      {formData.stamp.customStampUrl ? (
+                    <div className="w-24 h-24 bg-slate-50 border border-dashed border-slate-300 rounded-lg flex items-center justify-center p-2 relative shrink-0 overflow-hidden">
+                      {isLoadingCloudStamps ? (
+                        <div className="flex flex-col items-center justify-center gap-1 text-slate-400">
+                          <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+                          <span className="text-[9px] font-medium">Cloud...</span>
+                        </div>
+                      ) : formData.stamp.customStampUrl ? (
                         <img
                           src={formData.stamp.customStampUrl}
                           alt="Sampel Stempel Remasbara"
