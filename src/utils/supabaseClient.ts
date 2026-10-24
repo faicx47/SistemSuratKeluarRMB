@@ -388,22 +388,32 @@ export const SupabaseService = {
         contact_number: profile.phone,
         emblem_url: profile.logoUrl || null,
         stamp_url: profile.defaultStampUrl || null,
+        profile_data: sanitizePayload(profile),
         updated_at: new Date().toISOString(),
       };
 
       // Coba simpan ke id default terlebih dahulu
-      const { error } = await supabase.from('org_profile').upsert(payload, { onConflict: 'id' });
+      let { error } = await supabase.from('org_profile').upsert(payload, { onConflict: 'id' });
 
       if (error) {
         console.warn('Supabase saveOrgProfile error on default id:', error.message);
-        // Fallback update pada baris pertama yang ada
-        const { error: updErr } = await supabase
-          .from('org_profile')
-          .update(payload)
-          .neq('id', '');
-        if (updErr) {
-          console.warn('Supabase fallback update org_profile error:', updErr.message);
-          return false;
+        // Jika error karena kolom profile_data tidak ada di skema lama, hapus dan ulangi
+        if (error.message.includes('profile_data')) {
+          delete payload.profile_data;
+          const retry = await supabase.from('org_profile').upsert(payload, { onConflict: 'id' });
+          error = retry.error;
+        }
+
+        if (error) {
+          // Fallback update pada baris pertama yang ada
+          const { error: updErr } = await supabase
+            .from('org_profile')
+            .update(payload)
+            .neq('id', '');
+          if (updErr) {
+            console.warn('Supabase fallback update org_profile error:', updErr.message);
+            return false;
+          }
         }
       }
       return true;
@@ -430,36 +440,46 @@ export const SupabaseService = {
         return null;
       }
 
+      let profile: OrganizationProfile;
+
       // Jika ada field profile_data (jsonb)
       if (data.profile_data) {
         const parsed = typeof data.profile_data === 'string'
           ? JSON.parse(data.profile_data)
           : data.profile_data;
-        return parsed as OrganizationProfile;
+        profile = parsed as OrganizationProfile;
+      } else {
+        // Mapping dari kolom tabel Supabase
+        profile = {
+          name: data.org_name || 'REMAJA MASJID BAITURRAHMAN',
+          subName: 'DEPARTEMEN DAKWAH & KEPEMUDAAN',
+          mosqueName: data.mosque_name || 'MASJID BAITURRAHMAN',
+          address: data.address || 'Jl. Toleiskandar KM 3, Mekarjaya, Sukmajaya',
+          kelurahan: 'Mekarjaya',
+          kecamatan: 'Sukmajaya',
+          city: data.city || 'Kota Depok',
+          province: 'Jawa Barat',
+          postalCode: '16411',
+          phone: data.contact_number || '0896-4333-1415',
+          email: 'remasbaraofficial@gmail.com',
+          instagram: '@remasbara_official',
+          codeIdentifier: 'RMB',
+          logoUrl: data.emblem_url || undefined,
+          defaultStampUrl: data.stamp_url || undefined,
+          defaultKemasjidanStampUrl: undefined,
+          defaultYayasanStampUrl: undefined,
+        };
       }
 
-      // Mapping dari kolom tabel Supabase
-      const defaultOrg: OrganizationProfile = {
-        name: data.org_name || 'REMAJA MASJID BAITURRAHMAN',
-        subName: 'DEPARTEMEN DAKWAH & KEPEMUDAAN',
-        mosqueName: data.mosque_name || 'MASJID BAITURRAHMAN',
-        address: data.address || 'Jl. Toleiskandar KM 3, Mekarjaya, Sukmajaya',
-        kelurahan: 'Mekarjaya',
-        kecamatan: 'Sukmajaya',
-        city: data.city || 'Kota Depok',
-        province: 'Jawa Barat',
-        postalCode: '16411',
-        phone: data.contact_number || '0896-4333-1415',
-        email: 'remasbaraofficial@gmail.com',
-        instagram: '@remasbara_official',
-        codeIdentifier: 'RMB',
-        logoUrl: data.emblem_url || undefined,
-        defaultStampUrl: data.stamp_url || undefined,
-        defaultKemasjidanStampUrl: undefined,
-        defaultYayasanStampUrl: undefined,
-      };
+      // Pastikan stamp_url dari kolom tabel menimpa defaultStampUrl jika belum ada
+      if (data.stamp_url && !profile.defaultStampUrl) {
+        profile.defaultStampUrl = data.stamp_url;
+      }
+      if (data.emblem_url && !profile.logoUrl) {
+        profile.logoUrl = data.emblem_url;
+      }
 
-      return defaultOrg;
+      return profile;
     } catch (e) {
       console.warn('Supabase fetchOrgProfile exception:', e);
       return null;
@@ -584,26 +604,37 @@ export const SupabaseService = {
    */
   async saveStamp(stamp: SavedStamp): Promise<boolean> {
     try {
-      const { error } = await supabase.from('stamps').upsert(
-        {
-          id: stamp.id,
-          category: stamp.category,
-          title: stamp.title,
-          organization: stamp.organization,
-          color: stamp.color,
-          opacity: stamp.opacity,
-          image_url: stamp.imageUrl || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      const payload: any = {
+        id: stamp.id,
+        category: stamp.category,
+        title: stamp.title,
+        organization: stamp.organization || '',
+        color: stamp.color || 'red',
+        opacity: stamp.opacity !== null && stamp.opacity !== undefined ? Number(stamp.opacity) : 0.92,
+        image_url: stamp.imageUrl || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      let { error } = await supabase.from('stamps').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.warn('Supabase saveStamp error:', error.message);
-        return false;
+        console.warn('Supabase saveStamp upsert notice:', error.message);
+        // Fallback update jika onConflict id tidak terpenuhi
+        const { error: updErr } = await supabase.from('stamps').update(payload).eq('id', stamp.id);
+        if (updErr) {
+          // Jika skema menggunakan kolom data_url
+          const altPayload = { ...payload, data_url: stamp.imageUrl || null };
+          delete altPayload.image_url;
+          const { error: altErr } = await supabase.from('stamps').upsert(altPayload, { onConflict: 'id' });
+          if (altErr) {
+            console.warn('Supabase saveStamp fallback error:', altErr.message);
+            return false;
+          }
+        }
       }
       return true;
     } catch (e) {
+      console.warn('Supabase saveStamp exception:', e);
       return false;
     }
   },
@@ -646,23 +677,172 @@ export const SupabaseService = {
     try {
       const { data, error } = await supabase
         .from('stamps')
-        .select('id, category, title, organization, color, opacity, image_url, updated_at')
+        .select('*')
         .order('updated_at', { ascending: true });
 
       if (error || !data || data.length === 0) return null;
       const stamps: SavedStamp[] = data.map((d: any) => ({
         id: d.id,
-        category: d.category,
-        title: d.title,
+        category: d.category || 'custom',
+        title: d.title || 'Stempel',
         organization: d.organization || '',
         color: d.color || 'red',
-        opacity: d.opacity !== null ? Number(d.opacity) : 0.92,
-        imageUrl: d.image_url || undefined,
-        updatedAt: d.updated_at,
+        opacity: d.opacity !== null && d.opacity !== undefined ? Number(d.opacity) : 0.92,
+        imageUrl: d.image_url || d.data_url || d.imageUrl || undefined,
+        updatedAt: d.updated_at || new Date().toISOString(),
       }));
       return stamps;
     } catch (e) {
       return null;
+    }
+  },
+
+  /**
+   * Simpan stempel kustom aktif langsung ke Supabase (tabel stamps dan tabel org_profile)
+   * Menyinkronkan stempel aktif ke semua perangkat & browser
+   */
+  async saveActiveCustomStamp(
+    target: 'remasbara' | 'kemasjidan' | 'yayasan',
+    dataUrl: string,
+    options?: {
+      color?: 'red' | 'emerald' | 'blue' | 'purple';
+      opacity?: number;
+    }
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      let id = 'stamp-remasbara';
+      let category: 'remasbara' | 'kemasjidan' | 'yayasan' = 'remasbara';
+      let title = 'Stempel Resmi REMASBARA';
+      let organization = 'Remaja Masjid Baiturrahman';
+      let color: any = options?.color || 'red';
+      let opacity = options?.opacity ?? 0.92;
+
+      if (target === 'kemasjidan') {
+        id = 'stamp-kemasjidan';
+        category = 'kemasjidan';
+        title = 'Stempel Bidang Kemasjidan';
+        organization = 'Bidang Kemasjidan Masjid Baiturrahman';
+        color = options?.color || 'emerald';
+      } else if (target === 'yayasan') {
+        id = 'stamp-yayasan';
+        category = 'yayasan';
+        title = 'Stempel Resmi Yayasan';
+        organization = 'Yayasan Masjid Baiturrahman';
+        color = options?.color || 'emerald';
+      }
+
+      const stampRecord: SavedStamp = {
+        id,
+        category,
+        title,
+        organization,
+        color,
+        opacity,
+        imageUrl: dataUrl,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // 1. Simpan ke tabel stamps di Supabase
+      const stampSaved = await this.saveStamp(stampRecord);
+      if (!stampSaved) {
+        console.warn('Gagal menyimpan stempel ke tabel stamps Supabase, melanjutkan penyimpanan ke org_profile...');
+      }
+
+      // 2. Simpan referensi stempel aktif pada profil organisasi di Supabase
+      const org = (await this.fetchOrgProfile()) || {
+        name: 'REMAJA MASJID BAITURRAHMAN',
+        subName: 'DEPARTEMEN DAKWAH & KEPEMUDAAN',
+        mosqueName: 'MASJID BAITURRAHMAN',
+        address: 'Jl. Toleiskandar KM 3, Mekarjaya, Sukmajaya',
+        kelurahan: 'Mekarjaya',
+        kecamatan: 'Sukmajaya',
+        city: 'Kota Depok',
+        province: 'Jawa Barat',
+        postalCode: '16411',
+        phone: '0896-4333-1415',
+        email: 'remasbaraofficial@gmail.com',
+        instagram: '@remasbara_official',
+        codeIdentifier: 'RMB',
+      };
+
+      if (target === 'remasbara') {
+        org.defaultStampUrl = dataUrl;
+      } else if (target === 'kemasjidan') {
+        org.defaultKemasjidanStampUrl = dataUrl;
+      } else if (target === 'yayasan') {
+        org.defaultYayasanStampUrl = dataUrl;
+      }
+
+      await this.saveOrgProfile(org);
+
+      // 3. Simpan juga ke cache lokal agar instan
+      try {
+        const localStampsRaw = localStorage.getItem('remasbara_stamps_v1');
+        const localStamps: SavedStamp[] = localStampsRaw ? JSON.parse(localStampsRaw) : [];
+        const idx = localStamps.findIndex((s) => s.id === id);
+        if (idx >= 0) {
+          localStamps[idx] = stampRecord;
+        } else {
+          localStamps.push(stampRecord);
+        }
+        localStorage.setItem('remasbara_stamps_v1', JSON.stringify(localStamps));
+        localStorage.setItem('remasbara_org_profile_v1', JSON.stringify(org));
+
+        // Dispatch storage and stamps-updated events
+        window.dispatchEvent(new CustomEvent('stamps-updated', { detail: { target, dataUrl } }));
+      } catch (localErr) {
+        console.warn('Local storage cache warning:', localErr);
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('saveActiveCustomStamp exception:', err);
+      return { success: false, error: err?.message || String(err) };
+    }
+  },
+
+  /**
+   * Reset stempel kustom kembali ke vektor bawaan di Supabase
+   */
+  async resetActiveCustomStamp(
+    target: 'remasbara' | 'kemasjidan' | 'yayasan'
+  ): Promise<boolean> {
+    try {
+      const id = target === 'remasbara' ? 'stamp-remasbara' : target === 'kemasjidan' ? 'stamp-kemasjidan' : 'stamp-yayasan';
+
+      // 1. Update di tabel stamps
+      await supabase.from('stamps').update({ image_url: null, updated_at: new Date().toISOString() }).eq('id', id);
+
+      // 2. Update di org_profile
+      const org = await this.fetchOrgProfile();
+      if (org) {
+        if (target === 'remasbara') org.defaultStampUrl = undefined;
+        if (target === 'kemasjidan') org.defaultKemasjidanStampUrl = undefined;
+        if (target === 'yayasan') org.defaultYayasanStampUrl = undefined;
+        await this.saveOrgProfile(org);
+        try {
+          localStorage.setItem('remasbara_org_profile_v1', JSON.stringify(org));
+        } catch {}
+      }
+
+      // 3. Update local cache
+      try {
+        const localStampsRaw = localStorage.getItem('remasbara_stamps_v1');
+        if (localStampsRaw) {
+          const localStamps: SavedStamp[] = JSON.parse(localStampsRaw);
+          const found = localStamps.find((s) => s.id === id);
+          if (found) {
+            found.imageUrl = undefined;
+            localStorage.setItem('remasbara_stamps_v1', JSON.stringify(localStamps));
+          }
+        }
+        window.dispatchEvent(new CustomEvent('stamps-updated', { detail: { target, dataUrl: null } }));
+      } catch {}
+
+      return true;
+    } catch (e) {
+      console.warn('resetActiveCustomStamp error:', e);
+      return false;
     }
   },
 

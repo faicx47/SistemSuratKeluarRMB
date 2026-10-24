@@ -26,7 +26,7 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
   }
 
   // Safe normalized profile with bullet-proof fallbacks
-  const safeProfile = orgProfile || {
+  const safeProfile: Partial<OrganizationProfile> = orgProfile || {
     name: 'Remasbara',
     address: 'Jl. Tole Iskandar KM 3',
     kelurahan: 'Mekarjaya',
@@ -37,6 +37,9 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
     email: 'remasbaraofficial@gmail.com',
     codeIdentifier: 'RMB',
     logoUrl: undefined,
+    defaultStampUrl: undefined,
+    defaultKemasjidanStampUrl: undefined,
+    defaultYayasanStampUrl: undefined,
   };
 
   // Safe normalized signatories
@@ -63,6 +66,10 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
     ? letter.contentParagraphs
     : [];
   const safeCopies = Array.isArray(letter.copies) ? letter.copies : [];
+
+  const effectiveRemasbaraStampUrl = letter.stamp?.customStampUrl || safeProfile.defaultStampUrl;
+  const effectiveKemasjidanStampUrl = letter.kemasjidanStamp?.customStampUrl || safeProfile.defaultKemasjidanStampUrl;
+  const effectiveYayasanStampUrl = letter.yayasanStamp?.customStampUrl || safeProfile.defaultYayasanStampUrl;
 
   useEffect(() => {
     if (safeVerification?.enabled && safeVerification?.verificationCode) {
@@ -253,9 +260,9 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                   className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
                   style={{ transform: 'translateX(2cm)' }}
                 >
-                  {letter.stamp.customStampUrl ? (
+                  {effectiveRemasbaraStampUrl ? (
                     <img
-                      src={letter.stamp.customStampUrl}
+                      src={effectiveRemasbaraStampUrl}
                       alt="Stempel Resmi Remasbara"
                       style={{ opacity: letter.stamp.opacity ?? 0.92 }}
                       className="w-[130px] h-[130px] object-contain transform -rotate-6 select-none"
@@ -349,11 +356,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                         className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
                         style={{ transform: 'translateX(2cm)' }}
                       >
-                        {letter.yayasanStamp?.customStampUrl ? (
+                        {effectiveYayasanStampUrl ? (
                           <img
-                            src={letter.yayasanStamp.customStampUrl}
+                            src={effectiveYayasanStampUrl}
                             alt="Stempel Yayasan"
-                            style={{ opacity: letter.yayasanStamp.opacity ?? 0.92 }}
+                            style={{ opacity: letter.yayasanStamp?.opacity ?? 0.92 }}
                             className="w-[130px] h-[130px] object-contain transform -rotate-6 select-none"
                           />
                         ) : (
@@ -402,11 +409,11 @@ export const LetterPreviewA4: React.FC<LetterPreviewA4Props> = ({ letter, orgPro
                         className="absolute -left-6 sm:-left-8 top-1 z-10 pointer-events-none"
                         style={{ transform: 'translateX(2cm)' }}
                       >
-                        {letter.kemasjidanStamp?.customStampUrl ? (
+                        {effectiveKemasjidanStampUrl ? (
                           <img
-                            src={letter.kemasjidanStamp.customStampUrl}
+                            src={effectiveKemasjidanStampUrl}
                             alt="Stempel Bidang Kemasjidan"
-                            style={{ opacity: letter.kemasjidanStamp.opacity ?? 0.92 }}
+                            style={{ opacity: letter.kemasjidanStamp?.opacity ?? 0.92 }}
                             className="w-[130px] h-[130px] object-contain transform -rotate-6 select-none"
                           />
                         ) : (

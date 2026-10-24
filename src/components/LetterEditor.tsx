@@ -22,6 +22,7 @@ import {
   Database,
   Check,
   Loader2,
+  Cloud,
 } from 'lucide-react';
 import {
   LetterDocument,
@@ -41,6 +42,7 @@ import { LETTER_TEMPLATES } from '../utils/templates';
 import { StorageService } from '../utils/storage';
 import { SupabaseService, supabase, sanitizePayload } from '../utils/supabaseClient';
 import { processSignatureImageFile } from '../utils/signatureImageHelper';
+import { processStampImageFile } from '../utils/stampImageHelper';
 import { SignatureCanvasModal } from './SignatureCanvasModal';
 import {
   RemasbaraOfficialStamp,
@@ -108,6 +110,8 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
   });
 
   const [savedSignatures, setSavedSignatures] = useState<SavedSignature[]>(StorageService.getSignatures());
+  const [uploadingStampTarget, setUploadingStampTarget] = useState<'remasbara' | 'kemasjidan' | 'yayasan' | null>(null);
+  const [stampSyncToast, setStampSyncToast] = useState<string | null>(null);
 
   // Listen for storage & signatures-updated events (e.g. from other tabs or Master TTD modal)
   useEffect(() => {
@@ -136,6 +140,114 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
     };
   }, []);
 
+  // Muat data stempel aktif langsung dari Supabase saat membuka form edit surat agar sinkron di semua PC/laptop
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchAndSyncActiveStamps = async () => {
+      try {
+        const [remoteStamps, remoteProfile] = await Promise.all([
+          SupabaseService.fetchStamps(),
+          SupabaseService.fetchOrgProfile(),
+        ]);
+
+        if (!isMounted) return;
+
+        const remasbaraStamp = remoteStamps?.find(
+          (s) => s.id === 'stamp-remasbara' || s.category === 'remasbara'
+        );
+        const kemasjidanStamp = remoteStamps?.find(
+          (s) => s.id === 'stamp-kemasjidan' || s.category === 'kemasjidan'
+        );
+        const yayasanStamp = remoteStamps?.find(
+          (s) => s.id === 'stamp-yayasan' || s.category === 'yayasan'
+        );
+
+        const activeRemasbaraUrl = remasbaraStamp?.imageUrl || remoteProfile?.defaultStampUrl;
+        const activeKemasjidanUrl = kemasjidanStamp?.imageUrl || remoteProfile?.defaultKemasjidanStampUrl;
+        const activeYayasanUrl = yayasanStamp?.imageUrl || remoteProfile?.defaultYayasanStampUrl;
+
+        setFormData((prev) => {
+          let changed = false;
+          const next = { ...prev };
+
+          // Remasbara: jika pada surat saat ini belum ada stempel kustom (atau baru dibuat), isi dari stempel aktif Supabase
+          if (activeRemasbaraUrl && !prev.stamp?.customStampUrl) {
+            next.stamp = {
+              ...prev.stamp,
+              customStampUrl: activeRemasbaraUrl,
+              enabled: prev.stamp?.enabled ?? true,
+            };
+            changed = true;
+          }
+
+          // Kemasjidan: jika pada surat saat ini belum ada stempel kustom, isi dari stempel aktif Supabase
+          if (activeKemasjidanUrl && !prev.kemasjidanStamp?.customStampUrl) {
+            next.kemasjidanStamp = {
+              ...(prev.kemasjidanStamp || { enabled: true, color: 'emerald', opacity: 0.92 }),
+              customStampUrl: activeKemasjidanUrl,
+              enabled: prev.kemasjidanStamp?.enabled ?? true,
+            };
+            changed = true;
+          }
+
+          // Yayasan: jika pada surat saat ini belum ada stempel kustom, isi dari stempel aktif Supabase
+          if (activeYayasanUrl && !prev.yayasanStamp?.customStampUrl) {
+            next.yayasanStamp = {
+              ...(prev.yayasanStamp || { enabled: true, color: 'emerald', opacity: 0.92 }),
+              customStampUrl: activeYayasanUrl,
+              enabled: prev.yayasanStamp?.enabled ?? true,
+            };
+            changed = true;
+          }
+
+          return changed ? next : prev;
+        });
+      } catch (err) {
+        console.warn('Gagal sinkronisasi stempel dari Supabase:', err);
+      }
+    };
+
+    fetchAndSyncActiveStamps();
+
+    const handleStampsUpdated = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      const { target, dataUrl } = detail;
+      setFormData((prev) => {
+        if (target === 'remasbara') {
+          return {
+            ...prev,
+            stamp: { ...prev.stamp, customStampUrl: dataUrl || undefined },
+          };
+        } else if (target === 'kemasjidan') {
+          return {
+            ...prev,
+            kemasjidanStamp: {
+              ...(prev.kemasjidanStamp || { enabled: true, color: 'emerald', opacity: 0.92 }),
+              customStampUrl: dataUrl || undefined,
+            },
+          };
+        } else if (target === 'yayasan') {
+          return {
+            ...prev,
+            yayasanStamp: {
+              ...(prev.yayasanStamp || { enabled: true, color: 'emerald', opacity: 0.92 }),
+              customStampUrl: dataUrl || undefined,
+            },
+          };
+        }
+        return prev;
+      });
+    };
+
+    window.addEventListener('stamps-updated', handleStampsUpdated);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('stamps-updated', handleStampsUpdated);
+    };
+  }, []);
+
   // Direct Signature Upload Refs
   const fileUploadFirstRef = useRef<HTMLInputElement>(null);
   const fileUploadSecondRef = useRef<HTMLInputElement>(null);
@@ -147,51 +259,90 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
   const stampKemasjidanInputRef = useRef<HTMLInputElement>(null);
   const stampYayasanInputRef = useRef<HTMLInputElement>(null);
 
-  const handleStampUpload = (
+  const handleStampUpload = async (
     target: 'remasbara' | 'kemasjidan' | 'yayasan',
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (!dataUrl) return;
+    setUploadingStampTarget(target);
+    try {
+      // 1. Optimasi gambar: resize maks 512px & hilangkan background putih menjadi transparan
+      const dataUrl = await processStampImageFile(file);
+      if (!dataUrl) throw new Error('Gagal memproses gambar stempel');
 
-      if (target === 'remasbara') {
-        setFormData((prev) => ({
-          ...prev,
-          stamp: {
-            ...prev.stamp,
-            customStampUrl: dataUrl,
-            enabled: true,
-          },
-        }));
-      } else if (target === 'kemasjidan') {
-        setFormData((prev) => ({
-          ...prev,
-          kemasjidanStamp: {
-            ...(prev.kemasjidanStamp || { enabled: true, color: 'emerald', opacity: 0.92 }),
-            customStampUrl: dataUrl,
-            enabled: true,
-          },
-        }));
-      } else if (target === 'yayasan') {
-        setFormData((prev) => ({
-          ...prev,
-          yayasanStamp: {
-            ...(prev.yayasanStamp || { enabled: true, color: 'emerald', opacity: 0.92 }),
-            customStampUrl: dataUrl,
-            enabled: true,
-          },
-        }));
+      // 2. Ambil preferensi warna dan opacity saat ini
+      const color =
+        target === 'remasbara'
+          ? formData.stamp.color || 'red'
+          : target === 'kemasjidan'
+          ? formData.kemasjidanStamp?.color || 'emerald'
+          : formData.yayasanStamp?.color || 'emerald';
+
+      const opacity =
+        target === 'remasbara'
+          ? formData.stamp.opacity ?? 0.92
+          : target === 'kemasjidan'
+          ? formData.kemasjidanStamp?.opacity ?? 0.92
+          : formData.yayasanStamp?.opacity ?? 0.92;
+
+      // 3. Simpan langsung ke Supabase (tabel stamps & org_profile)
+      const res = await SupabaseService.saveActiveCustomStamp(target, dataUrl, { color, opacity });
+      if (!res.success) {
+        console.warn('Pemberitahuan simpan stempel ke Supabase:', res.error);
       }
-    };
-    reader.readAsDataURL(file);
+
+      // 4. Update data surat di state formulir
+      setFormData((prev) => {
+        if (target === 'remasbara') {
+          return {
+            ...prev,
+            stamp: {
+              ...prev.stamp,
+              customStampUrl: dataUrl,
+              enabled: true,
+            },
+          };
+        } else if (target === 'kemasjidan') {
+          return {
+            ...prev,
+            kemasjidanStamp: {
+              ...(prev.kemasjidanStamp || { enabled: true, color: 'emerald', opacity: 0.92 }),
+              customStampUrl: dataUrl,
+              enabled: true,
+            },
+          };
+        } else {
+          return {
+            ...prev,
+            yayasanStamp: {
+              ...(prev.yayasanStamp || { enabled: true, color: 'emerald', opacity: 0.92 }),
+              customStampUrl: dataUrl,
+              enabled: true,
+            },
+          };
+        }
+      });
+
+      const label =
+        target === 'remasbara'
+          ? 'REMASBARA'
+          : target === 'kemasjidan'
+          ? 'Bidang Kemasjidan'
+          : 'Ketua Yayasan';
+      setStampSyncToast(`✓ Stempel ${label} berhasil diunggah & tersimpan di Cloud Supabase! Sinkron di semua laptop/PC.`);
+      setTimeout(() => setStampSyncToast(null), 5000);
+    } catch (err: any) {
+      console.error('Upload stempel error:', err);
+      alert('Gagal mengunggah stempel: ' + (err?.message || err));
+    } finally {
+      setUploadingStampTarget(null);
+      if (e.target) e.target.value = '';
+    }
   };
 
-  const handleResetStamp = (target: 'remasbara' | 'kemasjidan' | 'yayasan') => {
+  const handleResetStamp = async (target: 'remasbara' | 'kemasjidan' | 'yayasan') => {
     if (target === 'remasbara') {
       if (stampRemasbaraInputRef.current) stampRemasbaraInputRef.current.value = '';
       setFormData((prev) => ({
@@ -220,6 +371,16 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
         },
       }));
     }
+
+    await SupabaseService.resetActiveCustomStamp(target).catch(() => {});
+    const label =
+      target === 'remasbara'
+        ? 'REMASBARA'
+        : target === 'kemasjidan'
+        ? 'Bidang Kemasjidan'
+        : 'Ketua Yayasan';
+    setStampSyncToast(`✓ Stempel ${label} dikembalikan ke stempel vektor bawaan resmi.`);
+    setTimeout(() => setStampSyncToast(null), 3000);
   };
 
   // Validate duplicate letter number
@@ -2022,11 +2183,21 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
+                            disabled={uploadingStampTarget === 'kemasjidan'}
                             onClick={() => stampKemasjidanInputRef.current?.click()}
-                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 rounded flex items-center gap-1 shadow-2xs transition-colors"
+                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white hover:bg-emerald-100 disabled:opacity-50 border border-emerald-300 rounded flex items-center gap-1 shadow-2xs transition-colors"
                           >
-                            <Upload className="w-3 h-3 text-emerald-700" />
-                            {formData.kemasjidanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
+                            {uploadingStampTarget === 'kemasjidan' ? (
+                              <>
+                                <Loader2 className="w-3 h-3 text-emerald-700 animate-spin" />
+                                Menyimpan ke Cloud...
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="w-3 h-3 text-emerald-700" />
+                                {formData.kemasjidanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
+                              </>
+                            )}
                           </button>
                           <button
                             type="button"
@@ -2254,11 +2425,21 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
+                            disabled={uploadingStampTarget === 'yayasan'}
                             onClick={() => stampYayasanInputRef.current?.click()}
-                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 rounded flex items-center gap-1 shadow-2xs transition-colors"
+                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-white hover:bg-emerald-100 disabled:opacity-50 border border-emerald-300 rounded flex items-center gap-1 shadow-2xs transition-colors"
                           >
-                            <Upload className="w-3 h-3 text-emerald-700" />
-                            {formData.yayasanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
+                            {uploadingStampTarget === 'yayasan' ? (
+                              <>
+                                <Loader2 className="w-3 h-3 text-emerald-700 animate-spin" />
+                                Menyimpan ke Cloud...
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="w-3 h-3 text-emerald-700" />
+                                {formData.yayasanStamp?.customStampUrl ? 'Ganti Sampel' : 'Upload Sampel Stempel'}
+                              </>
+                            )}
                           </button>
                           <button
                             type="button"
@@ -2280,6 +2461,31 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
         {/* TAB 5: STEMPEL RESMI & QR VERIFIKASI */}
         {activeTab === 'stempel' && (
           <div className="space-y-6">
+            {/* Database Sync Status & Toast untuk Stempel Cloud */}
+            {stampSyncToast ? (
+              <div className="bg-emerald-600 text-white rounded-xl p-3.5 text-xs font-semibold flex items-center justify-between shadow-md animate-fadeIn">
+                <span className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-200" />
+                  {stampSyncToast}
+                </span>
+                <span className="text-[10px] bg-emerald-700/80 px-2.5 py-0.5 rounded font-mono">
+                  SUPABASE CLOUD ✓
+                </span>
+              </div>
+            ) : (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900 flex items-start gap-3">
+                <Cloud className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-emerald-950 flex items-center gap-1.5">
+                    Sinkronisasi Stempel Cloud Supabase (Otomatis Antar-Perangkat)
+                  </p>
+                  <p className="text-emerald-800 text-[11px] leading-relaxed">
+                    Setiap sampel stempel kustom yang diunggah otomatis tersimpan di tabel database Supabase dan profil organisasi. Data stempel aktif langsung dimuat saat formulir dibuka di laptop, PC lain, maupun browser berbeda.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* 1. Box Stempel Resmi Remasbara (Ketua Umum) */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2342,6 +2548,12 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                         <span className="text-xs font-bold text-slate-800">
                           {formData.stamp.customStampUrl ? 'Sampel Stempel Kustom Aktif' : 'Stempel Vektor Resmi Remasbara'}
                         </span>
+                        {formData.stamp.customStampUrl && (
+                          <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <Check className="w-3 h-3 text-emerald-700" />
+                            Cloud Supabase Terhubung
+                          </span>
+                        )}
                         <span className="text-[10px] text-slate-500 font-medium">
                           (Diletakkan tepat di sebelah kiri Ketua Umum)
                         </span>
@@ -2360,11 +2572,21 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                         />
                         <button
                           type="button"
+                          disabled={uploadingStampTarget === 'remasbara'}
                           onClick={() => stampRemasbaraInputRef.current?.click()}
-                          className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
+                          className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 border border-emerald-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
                         >
-                          <Upload className="w-3.5 h-3.5 text-emerald-700" />
-                          {formData.stamp.customStampUrl ? 'Ganti Sampel Stempel' : 'Unggah Sampel Stempel'}
+                          {uploadingStampTarget === 'remasbara' ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 text-emerald-700 animate-spin" />
+                              Menyimpan ke Cloud...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                              {formData.stamp.customStampUrl ? 'Ganti Sampel Stempel' : 'Unggah Sampel Stempel'}
+                            </>
+                          )}
                         </button>
 
                         {formData.stamp.customStampUrl && (
@@ -2509,6 +2731,12 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                         <span className="text-xs font-bold text-slate-800">
                           {formData.kemasjidanStamp?.customStampUrl ? 'Sampel Stempel Kustom Aktif' : 'Stempel Vektor Resmi Kemasjidan'}
                         </span>
+                        {formData.kemasjidanStamp?.customStampUrl && (
+                          <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <Check className="w-3 h-3 text-emerald-700" />
+                            Cloud Supabase Terhubung
+                          </span>
+                        )}
                         <span className="text-[10px] text-slate-500 font-medium">
                           (Diletakkan tepat di sebelah kiri Ketua Bidang)
                         </span>
@@ -2527,11 +2755,21 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                         />
                         <button
                           type="button"
+                          disabled={uploadingStampTarget === 'kemasjidan'}
                           onClick={() => stampKemasjidanInputRef.current?.click()}
-                          className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
+                          className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 border border-emerald-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
                         >
-                          <Upload className="w-3.5 h-3.5 text-emerald-700" />
-                          {formData.kemasjidanStamp?.customStampUrl ? 'Ganti Sampel Stempel' : 'Unggah Sampel Stempel Kemasjidan'}
+                          {uploadingStampTarget === 'kemasjidan' ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 text-emerald-700 animate-spin" />
+                              Menyimpan ke Cloud...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                              {formData.kemasjidanStamp?.customStampUrl ? 'Ganti Sampel Stempel' : 'Unggah Sampel Stempel Kemasjidan'}
+                            </>
+                          )}
                         </button>
 
                         {formData.kemasjidanStamp?.customStampUrl && (
@@ -2682,6 +2920,12 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                         <span className="text-xs font-bold text-slate-800">
                           {formData.yayasanStamp?.customStampUrl ? 'Sampel Stempel Kustom Aktif' : 'Stempel Vektor Resmi Yayasan'}
                         </span>
+                        {formData.yayasanStamp?.customStampUrl && (
+                          <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <Check className="w-3 h-3 text-emerald-700" />
+                            Cloud Supabase Terhubung
+                          </span>
+                        )}
                         <span className="text-[10px] text-slate-500 font-medium">
                           (Diletakkan tepat di sebelah kiri Ketua Yayasan)
                         </span>
@@ -2700,11 +2944,21 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
                         />
                         <button
                           type="button"
+                          disabled={uploadingStampTarget === 'yayasan'}
                           onClick={() => stampYayasanInputRef.current?.click()}
-                          className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
+                          className="px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 border border-emerald-300 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs"
                         >
-                          <Upload className="w-3.5 h-3.5 text-emerald-700" />
-                          {formData.yayasanStamp?.customStampUrl ? 'Ganti Sampel Stempel' : 'Unggah Sampel Stempel Yayasan'}
+                          {uploadingStampTarget === 'yayasan' ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 text-emerald-700 animate-spin" />
+                              Menyimpan ke Cloud...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                              {formData.yayasanStamp?.customStampUrl ? 'Ganti Sampel Stempel' : 'Unggah Sampel Stempel Yayasan'}
+                            </>
+                          )}
                         </button>
 
                         {formData.yayasanStamp?.customStampUrl && (

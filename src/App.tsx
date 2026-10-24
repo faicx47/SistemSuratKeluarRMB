@@ -83,12 +83,23 @@ export default function App() {
         }
 
         // 2. KOP SURAT / PROFIL ORGANISASI: Segera timpa state lokal dengan data cloud Supabase
-        if (remoteProfile) {
-          setOrgProfile(remoteProfile);
-          StorageService.saveOrgProfile(remoteProfile);
-        } else {
-          setOrgProfile(StorageService.getOrgProfile());
+        const effectiveProfile = remoteProfile || StorageService.getOrgProfile();
+        if (remoteStamps && remoteStamps.length > 0) {
+          const remasbaraStamp = remoteStamps.find((s) => s.id === 'stamp-remasbara' || s.category === 'remasbara');
+          const kemasjidanStamp = remoteStamps.find((s) => s.id === 'stamp-kemasjidan' || s.category === 'kemasjidan');
+          const yayasanStamp = remoteStamps.find((s) => s.id === 'stamp-yayasan' || s.category === 'yayasan');
+          if (remasbaraStamp?.imageUrl && !effectiveProfile.defaultStampUrl) {
+            effectiveProfile.defaultStampUrl = remasbaraStamp.imageUrl;
+          }
+          if (kemasjidanStamp?.imageUrl && !effectiveProfile.defaultKemasjidanStampUrl) {
+            effectiveProfile.defaultKemasjidanStampUrl = kemasjidanStamp.imageUrl;
+          }
+          if (yayasanStamp?.imageUrl && !effectiveProfile.defaultYayasanStampUrl) {
+            effectiveProfile.defaultYayasanStampUrl = yayasanStamp.imageUrl;
+          }
         }
+        setOrgProfile(effectiveProfile);
+        StorageService.saveOrgProfile(effectiveProfile);
 
         // 3. MASTER STEMPEL: Segera timpa state lokal dengan data cloud Supabase
         if (remoteStamps && remoteStamps.length > 0) {
@@ -136,6 +147,8 @@ export default function App() {
         setOrgProfile(StorageService.getOrgProfile());
       } else if (e.key === 'remasbara_signatures_v1') {
         setLetters(StorageService.getLetters());
+      } else if (e.key === 'remasbara_stamps_v1') {
+        setOrgProfile(StorageService.getOrgProfile());
       }
     };
 
@@ -143,13 +156,19 @@ export default function App() {
       setLetters(StorageService.getLetters());
     };
 
+    const handleStampsUpdated = () => {
+      setOrgProfile(StorageService.getOrgProfile());
+    };
+
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('signatures-updated', handleSignaturesUpdated);
+    window.addEventListener('stamps-updated', handleStampsUpdated);
     return () => {
       isMounted = false;
       clearTimeout(safetyTimeout);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('signatures-updated', handleSignaturesUpdated);
+      window.removeEventListener('stamps-updated', handleStampsUpdated);
     };
   }, []);
 

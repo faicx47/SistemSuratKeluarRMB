@@ -14,6 +14,7 @@ import {
 import { SavedStamp } from '../types/letter';
 import { StorageService } from '../utils/storage';
 import { SupabaseService } from '../utils/supabaseClient';
+import { processStampImageFile } from '../utils/stampImageHelper';
 import {
   RemasbaraOfficialStamp,
   KemasjidanOfficialStamp,
@@ -97,14 +98,18 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
     // If it's one of the primary org stamps, also update orgProfile defaults
     const org = StorageService.getOrgProfile();
     let orgChanged = false;
+    let targetCategory: 'remasbara' | 'kemasjidan' | 'yayasan' = 'remasbara';
     if (updated.id === 'stamp-remasbara') {
       org.defaultStampUrl = updated.imageUrl;
+      targetCategory = 'remasbara';
       orgChanged = true;
     } else if (updated.id === 'stamp-kemasjidan') {
       org.defaultKemasjidanStampUrl = updated.imageUrl;
+      targetCategory = 'kemasjidan';
       orgChanged = true;
     } else if (updated.id === 'stamp-yayasan') {
       org.defaultYayasanStampUrl = updated.imageUrl;
+      targetCategory = 'yayasan';
       orgChanged = true;
     }
     if (orgChanged) {
@@ -112,24 +117,33 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
       SupabaseService.saveOrgProfile(org).catch(() => {});
     }
 
+    try {
+      window.dispatchEvent(
+        new CustomEvent('stamps-updated', {
+          detail: { target: targetCategory, dataUrl: updated.imageUrl },
+        })
+      );
+    } catch {}
+
     setSavedFeedback(true);
     setTimeout(() => setSavedFeedback(false), 2000);
     if (onUpdate) onUpdate();
   };
 
-  const handleUploadSample = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadSample = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
+    try {
+      const dataUrl = await processStampImageFile(file);
       if (dataUrl) {
         handleUpdateActiveStamp({ imageUrl: dataUrl });
       }
-    };
-    reader.readAsDataURL(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    } catch (err: any) {
+      alert('Gagal memproses gambar stempel: ' + (err?.message || err));
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleResetToVector = () => {
