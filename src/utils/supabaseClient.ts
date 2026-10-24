@@ -2,10 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 import { LetterDocument, OrganizationProfile, SavedSignature, SavedStamp } from '../types/letter';
 
 // Supabase Configuration from Environment or Direct Project Credentials
+const env = typeof import.meta !== 'undefined' && (import.meta as any).env ? (import.meta as any).env : {};
 export const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL || 'https://jekeecwrqtdkvrgkvovx.supabase.co';
+  env.VITE_SUPABASE_URL || 'https://jekeecwrqtdkvrgkvovx.supabase.co';
 export const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_qgUaQEsghvooy0kVzkqP7w_xemeIPeb';
+  env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_qgUaQEsghvooy0kVzkqP7w_xemeIPeb';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -47,14 +48,25 @@ create table if not exists public.letters (
   recipient_name text,
   date_masehi text,
   document_data jsonb not null,
+  direction text default 'Surat Keluar',
   created_at timestamp with time zone default timezone('utc'::text, now()),
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- 2. Tabel Profil Organisasi (REMASBARA)
 create table if not exists public.org_profile (
-  id text primary key default 'main',
-  profile_data jsonb not null,
+  id text primary key default 'default',
+  org_name text,
+  mosque_name text,
+  address text,
+  city text,
+  leader_name text,
+  secretary_name text,
+  motto text,
+  contact_number text,
+  emblem_url text,
+  stamp_url text,
+  profile_data jsonb,
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -82,6 +94,12 @@ create table if not exists public.stamps (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- Berikan izin akses penuh ke role anon dan authenticated
+grant select, insert, update, delete on public.letters to anon, authenticated;
+grant select, insert, update, delete on public.org_profile to anon, authenticated;
+grant select, insert, update, delete on public.signatures to anon, authenticated;
+grant select, insert, update, delete on public.stamps to anon, authenticated;
+
 -- Aktifkan RLS dan Izinkan Akses Publik / Publishable Key
 alter table public.letters enable row level security;
 alter table public.org_profile enable row level security;
@@ -90,19 +108,19 @@ alter table public.stamps enable row level security;
 
 -- Policy untuk letters
 drop policy if exists "Allow all access to letters" on public.letters;
-create policy "Allow all access to letters" on public.letters for all using (true) with check (true);
+create policy "Allow all access to letters" on public.letters for all to anon, authenticated using (true) with check (true);
 
 -- Policy untuk org_profile
 drop policy if exists "Allow all access to org_profile" on public.org_profile;
-create policy "Allow all access to org_profile" on public.org_profile for all using (true) with check (true);
+create policy "Allow all access to org_profile" on public.org_profile for all to anon, authenticated using (true) with check (true);
 
 -- Policy untuk signatures
 drop policy if exists "Allow all access to signatures" on public.signatures;
-create policy "Allow all access to signatures" on public.signatures for all using (true) with check (true);
+create policy "Allow all access to signatures" on public.signatures for all to anon, authenticated using (true) with check (true);
 
 -- Policy untuk stamps
 drop policy if exists "Allow all access to stamps" on public.stamps;
-create policy "Allow all access to stamps" on public.stamps for all using (true) with check (true);
+create policy "Allow all access to stamps" on public.stamps for all to anon, authenticated using (true) with check (true);
 `;
 
 export interface SupabaseHealth {
@@ -356,21 +374,37 @@ export const SupabaseService = {
 
   /**
    * Save organization profile to Supabase
+   * Kompatibel dengan skema tabel Supabase yang ada (org_name, mosque_name, emblem_url, dsb)
+   * maupun skema berbasis profile_data jsonb
    */
   async saveOrgProfile(profile: OrganizationProfile): Promise<boolean> {
     try {
-      const { error } = await supabase.from('org_profile').upsert(
-        {
-          id: 'main',
-          profile_data: profile,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      const payload: any = {
+        id: 'default',
+        org_name: profile.name,
+        mosque_name: profile.mosqueName,
+        address: profile.address,
+        city: profile.city,
+        contact_number: profile.phone,
+        emblem_url: profile.logoUrl || null,
+        stamp_url: profile.defaultStampUrl || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Coba simpan ke id default terlebih dahulu
+      const { error } = await supabase.from('org_profile').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.warn('Supabase saveOrgProfile error:', error.message);
-        return false;
+        console.warn('Supabase saveOrgProfile error on default id:', error.message);
+        // Fallback update pada baris pertama yang ada
+        const { error: updErr } = await supabase
+          .from('org_profile')
+          .update(payload)
+          .neq('id', '');
+        if (updErr) {
+          console.warn('Supabase fallback update org_profile error:', updErr.message);
+          return false;
+        }
       }
       return true;
     } catch (e) {
@@ -381,18 +415,53 @@ export const SupabaseService = {
 
   /**
    * Fetch organization profile from Supabase
+   * Mengambil data kop resmi dari Supabase dan memetakan kolom-kolomnya
    */
   async fetchOrgProfile(): Promise<OrganizationProfile | null> {
     try {
       const { data, error } = await supabase
         .from('org_profile')
-        .select('profile_data')
-        .eq('id', 'main')
+        .select('*')
+        .limit(1)
         .maybeSingle();
 
-      if (error || !data) return null;
-      return data.profile_data as OrganizationProfile;
+      if (error || !data) {
+        console.warn('Supabase fetchOrgProfile notice:', error?.message);
+        return null;
+      }
+
+      // Jika ada field profile_data (jsonb)
+      if (data.profile_data) {
+        const parsed = typeof data.profile_data === 'string'
+          ? JSON.parse(data.profile_data)
+          : data.profile_data;
+        return parsed as OrganizationProfile;
+      }
+
+      // Mapping dari kolom tabel Supabase
+      const defaultOrg: OrganizationProfile = {
+        name: data.org_name || 'REMAJA MASJID BAITURRAHMAN',
+        subName: 'DEPARTEMEN DAKWAH & KEPEMUDAAN',
+        mosqueName: data.mosque_name || 'MASJID BAITURRAHMAN',
+        address: data.address || 'Jl. Toleiskandar KM 3, Mekarjaya, Sukmajaya',
+        kelurahan: 'Mekarjaya',
+        kecamatan: 'Sukmajaya',
+        city: data.city || 'Kota Depok',
+        province: 'Jawa Barat',
+        postalCode: '16411',
+        phone: data.contact_number || '0896-4333-1415',
+        email: 'remasbaraofficial@gmail.com',
+        instagram: '@remasbara_official',
+        codeIdentifier: 'RMB',
+        logoUrl: data.emblem_url || undefined,
+        defaultStampUrl: data.stamp_url || undefined,
+        defaultKemasjidanStampUrl: undefined,
+        defaultYayasanStampUrl: undefined,
+      };
+
+      return defaultOrg;
     } catch (e) {
+      console.warn('Supabase fetchOrgProfile exception:', e);
       return null;
     }
   },

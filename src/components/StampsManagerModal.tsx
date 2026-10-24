@@ -44,8 +44,25 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Initial fetch directly from Supabase stamps table on modal open
   React.useEffect(() => {
     if (!isOpen) return;
+    let isMounted = true;
+
+    const loadRemoteStamps = async () => {
+      try {
+        const remote = await SupabaseService.fetchStamps();
+        if (remote && remote.length > 0 && isMounted) {
+          setStamps(remote);
+          localStorage.setItem('remasbara_stamps_v1', JSON.stringify(remote));
+        }
+      } catch (e) {
+        console.warn('Gagal memuat stempel dari Supabase:', e);
+      }
+    };
+
+    loadRemoteStamps();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
         if (typeof onClose === 'function') {
@@ -55,6 +72,7 @@ export const StampsManagerModal: React.FC<StampsManagerModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      isMounted = false;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);

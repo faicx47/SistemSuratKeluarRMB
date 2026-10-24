@@ -121,6 +121,15 @@ export const LetterEditor: React.FC<LetterEditorProps> = ({
     };
     window.addEventListener('storage', handleStorage);
     window.addEventListener('signatures-updated', handleSignaturesUpdated);
+
+    // Initial fetch from Supabase to ensure fresh signatures
+    SupabaseService.fetchSignatures().then((remote) => {
+      if (remote && remote.length > 0) {
+        setSavedSignatures(remote);
+        localStorage.setItem('remasbara_signatures_v1', JSON.stringify(remote));
+      }
+    }).catch(() => {});
+
     return () => {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('signatures-updated', handleSignaturesUpdated);

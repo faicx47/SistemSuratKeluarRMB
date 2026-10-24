@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { OrganizationProfile } from '../types/letter';
 import { StorageService } from '../utils/storage';
+import { SupabaseService } from '../utils/supabaseClient';
 import { RemasbaraLogo, RemasbaraOfficialStamp } from './RemasbaraVisuals';
 
 interface OrgSettingsModalProps {
@@ -29,11 +30,35 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
   onSaved,
 }) => {
   const [profile, setProfile] = useState<OrganizationProfile>(StorageService.getOrgProfile());
+  const [isLoadingProfile, setIsLoadingProfile] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stampInputRef = useRef<HTMLInputElement>(null);
 
+  // Fetch directly from Supabase table on open to ensure latest cloud profile is displayed
   React.useEffect(() => {
     if (!isOpen) return;
+    let isMounted = true;
+    setIsLoadingProfile(true);
+
+    const loadRemoteProfile = async () => {
+      try {
+        const remote = await SupabaseService.fetchOrgProfile();
+        if (remote && isMounted) {
+          setProfile(remote);
+          StorageService.saveOrgProfile(remote);
+        }
+      } catch (e) {
+        console.warn('Gagal memuat profil organisasi dari Supabase:', e);
+      } finally {
+        if (isMounted) {
+          setIsLoadingProfile(false);
+        }
+      }
+    };
+
+    loadRemoteProfile();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
         if (typeof onClose === 'function') {
@@ -43,6 +68,7 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      isMounted = false;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
@@ -91,11 +117,21 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    StorageService.saveOrgProfile(profile);
-    onSaved();
-    onClose();
+    setIsSaving(true);
+    try {
+      StorageService.saveOrgProfile(profile);
+      await SupabaseService.saveOrgProfile(profile);
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      console.error('Gagal simpan profil ke Supabase:', err);
+      onSaved();
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -410,10 +446,20 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-sm flex items-center gap-1.5"
+              disabled={isSaving}
+              className="px-4 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
-              <Save className="w-4 h-4" />
-              Simpan Profil
+              {isSaving ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Menyimpan ke Cloud...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Simpan Profil</span>
+                </>
+              )}
             </button>
           </div>
         </form>

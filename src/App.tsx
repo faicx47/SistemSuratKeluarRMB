@@ -23,11 +23,13 @@ import {
   generateVerificationCode,
   getRomanMonth,
 } from './utils/dateAndNumber';
-import { CheckCircle2, MapPin, Mail, Phone } from 'lucide-react';
+import { CheckCircle2, MapPin, Mail, Phone, RefreshCw, Database, Loader2 } from 'lucide-react';
+import { RemasbaraLogo } from './components/RemasbaraVisuals';
 
 export default function App() {
   const [letters, setLetters] = useState<LetterDocument[]>([]);
   const [orgProfile, setOrgProfile] = useState<OrganizationProfile>(StorageService.getOrgProfile());
+  const [isInitialSyncing, setIsInitialSyncing] = useState<boolean>(true);
   const [currentView, setCurrentView] = useState<'archive' | 'create' | 'edit'>('archive');
   const [activeLetter, setActiveLetter] = useState<LetterDocument | null>(null);
 
@@ -53,113 +55,80 @@ export default function App() {
   };
 
   useEffect(() => {
-    // 1. Initial fast local load
-    const loaded = StorageService.getLetters();
-    setLetters(loaded);
-    setOrgProfile(StorageService.getOrgProfile());
+    let isMounted = true;
 
-    // 2. Background sync with Supabase
-    const initSupabaseSync = async () => {
+    // Memuat data langsung dari tabel-tabel Supabase saat awal dimuat (Initial Fetch)
+    const performInitialCloudSync = async () => {
       try {
-        // Sync Signatures first so new tabs get latest uploaded signatures immediately
-        const remoteSignatures = await SupabaseService.fetchSignatures();
-        if (remoteSignatures && remoteSignatures.length > 0) {
-          const localSigs = StorageService.getSignatures();
-          const sigMap = new Map<string, SavedSignature>();
-          localSigs.forEach((s) => sigMap.set(s.id, s));
+        const [remoteLetters, remoteProfile, remoteStamps, remoteSignatures] = await Promise.all([
+          SupabaseService.fetchLetters(),
+          SupabaseService.fetchOrgProfile(),
+          SupabaseService.fetchStamps(),
+          SupabaseService.fetchSignatures(),
+        ]);
 
-          let shouldPushLocalToRemote = false;
+        if (!isMounted) return;
 
-          remoteSignatures.forEach((remote) => {
-            const local = sigMap.get(remote.id);
-            if (!local) {
-              sigMap.set(remote.id, remote);
-              return;
-            }
-
-            const localIsDefault = isDefaultSignature(local.dataUrl);
-            const remoteIsDefault = isDefaultSignature(remote.dataUrl);
-
-            // JIKA LOCAL punya tanda tangan riil dan remote masih SVG default, JANGAN PERNAH menimpa local!
-            if (!localIsDefault && remoteIsDefault) {
-              sigMap.set(local.id, local);
-              shouldPushLocalToRemote = true;
-            } else if (localIsDefault && !remoteIsDefault) {
-              // Remote punya tanda tangan riil dari tab/perangkat lain, gunakan remote
-              sigMap.set(remote.id, remote);
-            } else {
-              // Keduanya riil atau keduanya default, gunakan yang updatedAt-nya lebih baru
-              const localTime = new Date(local.updatedAt || 0).getTime();
-              const remoteTime = new Date(remote.updatedAt || 0).getTime();
-              if (remoteTime > localTime) {
-                sigMap.set(remote.id, remote);
-              } else if (localTime > remoteTime) {
-                sigMap.set(local.id, local);
-                shouldPushLocalToRemote = true;
-              }
-            }
-          });
-
-          // Pertahankan setiap signature lokal baru yang belum ada di database
-          localSigs.forEach((l) => {
-            if (!remoteSignatures.some((r) => r.id === l.id)) {
-              sigMap.set(l.id, l);
-              shouldPushLocalToRemote = true;
-            }
-          });
-
-          const mergedSigs = Array.from(sigMap.values());
-          localStorage.setItem('remasbara_signatures_v1', JSON.stringify(mergedSigs));
-          try {
-            window.dispatchEvent(new Event('signatures-updated'));
-          } catch {}
-
-          if (shouldPushLocalToRemote) {
-            SupabaseService.syncSignatures(mergedSigs).catch(() => {});
-          }
-        } else {
-          const localSigs = StorageService.getSignatures();
-          SupabaseService.syncSignatures(localSigs).catch(() => {});
-        }
-
-        const remoteLetters = await SupabaseService.fetchLetters();
+        // 1. SURAT: Segera timpa state lokal dengan data cloud Supabase
         if (remoteLetters && remoteLetters.length > 0) {
-          // Merge remote letters with local
+          setLetters(remoteLetters);
+          localStorage.setItem('remasbara_letters_v1', JSON.stringify(remoteLetters));
+        } else {
+          // Hanya fallback ke lokal jika database kosong atau belum terisi
           const local = StorageService.getLetters();
-          const map = new Map<string, LetterDocument>();
-          local.forEach((l) => map.set(l.id, l));
-          remoteLetters.forEach((l) => map.set(l.id, l));
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-          );
-          setLetters(merged);
-          localStorage.setItem('remasbara_letters_v1', JSON.stringify(merged));
-        } else if (loaded && loaded.length > 0) {
-          // If remote is empty, backup local letters to Supabase
-          SupabaseService.syncAllLetters(loaded).catch(() => {});
+          setLetters(local);
+          if (local && local.length > 0) {
+            SupabaseService.syncAllLetters(local).catch(() => {});
+          }
         }
 
-        const remoteProfile = await SupabaseService.fetchOrgProfile();
+        // 2. KOP SURAT / PROFIL ORGANISASI: Segera timpa state lokal dengan data cloud Supabase
         if (remoteProfile) {
           setOrgProfile(remoteProfile);
           StorageService.saveOrgProfile(remoteProfile);
+        } else {
+          setOrgProfile(StorageService.getOrgProfile());
         }
 
-        const remoteStamps = await SupabaseService.fetchStamps();
+        // 3. MASTER STEMPEL: Segera timpa state lokal dengan data cloud Supabase
         if (remoteStamps && remoteStamps.length > 0) {
           localStorage.setItem('remasbara_stamps_v1', JSON.stringify(remoteStamps));
         } else {
           const localStamps = StorageService.getStamps();
           SupabaseService.syncAllStamps(localStamps).catch(() => {});
         }
+
+        // 4. MASTER TTD: Segera timpa state lokal dengan data cloud Supabase
+        if (remoteSignatures && remoteSignatures.length > 0) {
+          localStorage.setItem('remasbara_signatures_v1', JSON.stringify(remoteSignatures));
+          try {
+            window.dispatchEvent(new Event('signatures-updated'));
+          } catch {}
+        } else {
+          const localSigs = StorageService.getSignatures();
+          SupabaseService.syncSignatures(localSigs).catch(() => {});
+        }
       } catch (err) {
-        console.warn('Initial Supabase sync notice:', err);
+        console.warn('Initial Supabase sync error:', err);
+        setLetters(StorageService.getLetters());
+        setOrgProfile(StorageService.getOrgProfile());
+      } finally {
+        if (isMounted) {
+          setIsInitialSyncing(false);
+        }
       }
     };
 
-    initSupabaseSync();
+    performInitialCloudSync();
 
-    // 3. Multi-Tab Synchronizer (detect changes from other browser tabs)
+    // Safety timer batas maksimum loading 2.5 detik agar antarmuka tidak terhambat
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted) {
+        setIsInitialSyncing(false);
+      }
+    }, 2500);
+
+    // Multi-Tab Synchronizer
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'remasbara_letters_v1') {
         setLetters(StorageService.getLetters());
@@ -177,16 +146,34 @@ export default function App() {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('signatures-updated', handleSignaturesUpdated);
     return () => {
+      isMounted = false;
+      clearTimeout(safetyTimeout);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('signatures-updated', handleSignaturesUpdated);
     };
   }, []);
 
-  const refreshLetters = () => {
+  const refreshLetters = async () => {
+    try {
+      const remote = await SupabaseService.fetchLetters();
+      if (remote && remote.length > 0) {
+        setLetters(remote);
+        localStorage.setItem('remasbara_letters_v1', JSON.stringify(remote));
+        return;
+      }
+    } catch {}
     setLetters(StorageService.getLetters());
   };
 
-  const refreshOrgProfile = () => {
+  const refreshOrgProfile = async () => {
+    try {
+      const remote = await SupabaseService.fetchOrgProfile();
+      if (remote) {
+        setOrgProfile(remote);
+        StorageService.saveOrgProfile(remote);
+        return;
+      }
+    } catch {}
     const profile = StorageService.getOrgProfile();
     setOrgProfile(profile);
     SupabaseService.saveOrgProfile(profile).catch(() => {});
@@ -316,6 +303,35 @@ export default function App() {
       window.print();
     }, 250);
   };
+
+  if (isInitialSyncing) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950 flex flex-col items-center justify-center p-6 text-white select-none">
+        <div className="flex flex-col items-center max-w-sm text-center space-y-5">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-2xl bg-emerald-800/80 border border-emerald-500/40 flex items-center justify-center shadow-xl shadow-emerald-950/60">
+              <RemasbaraLogo size={52} />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center border-2 border-slate-900 shadow-md">
+              <RefreshCw className="w-4 h-4 text-white animate-spin" />
+            </div>
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-white tracking-wide">
+              Menghubungkan ke Cloud Supabase
+            </h2>
+            <p className="text-xs text-emerald-200/90 mt-1.5 leading-relaxed">
+              Menyelaraskan arsip surat, profil kop, dan master stempel resmi...
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-emerald-300/80 font-mono bg-white/5 border border-white/10 px-3 py-1.5 rounded-full">
+            <Database className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Sinkronisasi Data Real-Time Antar-Perangkat</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans">

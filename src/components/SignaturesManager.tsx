@@ -28,12 +28,24 @@ export const SignaturesManager: React.FC<SignaturesManagerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTargetSigId, setUploadTargetSigId] = useState<string | null>(null);
 
-  // Reload latest signatures whenever modal opens or storage updates
+  // Reload latest signatures directly from Supabase whenever modal opens
   useEffect(() => {
     if (isOpen) {
       setSignatures(StorageService.getSignatures());
       setEditingSig(null);
       setDrawingSig(null);
+
+      let isMounted = true;
+      SupabaseService.fetchSignatures().then((remote) => {
+        if (remote && remote.length > 0 && isMounted) {
+          setSignatures(remote);
+          localStorage.setItem('remasbara_signatures_v1', JSON.stringify(remote));
+        }
+      }).catch(() => {});
+
+      return () => {
+        isMounted = false;
+      };
     }
   }, [isOpen]);
 
